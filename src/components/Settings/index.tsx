@@ -7,6 +7,7 @@ import { ClipboardSettings } from "./ClipboardSettings";
 import { UiSettings } from "./UiSettings";
 import { ExpanderSettings } from "./ExpanderSettings";
 import { InjectionSettings } from "./InjectionSettings";
+import { AutostartSettings } from "./AutostartSettings";
 import { useTheme } from "../../hooks/useTheme";
 
 interface AppConfig {
@@ -139,6 +140,10 @@ export function Settings() {
           onChange={(ui) => updateConfig({ ui })}
           onThemeChange={setTheme}
         />
+
+        <div className="border-t border-border-default pt-4">
+          <AutostartSettings />
+        </div>
 
         <div className="border-t border-border-default pt-4">
           <HotkeySettings
