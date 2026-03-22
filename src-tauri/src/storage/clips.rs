@@ -265,6 +265,25 @@ impl Storage {
         })
     }
 
+    /// Update the text content of a clip and recompute its hash.
+    pub fn update_clip_content(&self, id: &str, new_content: &str) -> Result<(), StorageError> {
+        use sha2::{Sha256, Digest};
+
+        let new_hash = format!("{:x}", Sha256::digest(new_content.as_bytes()));
+        let new_size = new_content.len() as i64;
+
+        let conn = self.conn.lock().unwrap();
+        let affected = conn.execute(
+            "UPDATE clips SET text_content = ?1, content_hash = ?2, content_size = ?3 WHERE id = ?4",
+            rusqlite::params![new_content, new_hash, new_size, id],
+        )?;
+
+        if affected == 0 {
+            return Err(StorageError::NotFound(format!("clip {id}")));
+        }
+        Ok(())
+    }
+
     /// Get the content hash of the most recently created clip.
     pub fn get_most_recent_hash(&self) -> Result<Option<String>, StorageError> {
         let conn = self.conn.lock().unwrap();
