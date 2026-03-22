@@ -191,12 +191,56 @@ fn monitor_text_loop(monitor: &WaylandClipboard, tx: mpsc::Sender<ClipItem>) {
     }
 }
 
+/// Re-assert clipboard content via wl-copy after the source app closed.
+/// This preserves clipboard content on Wayland where closing the owner
+/// app normally clears the clipboard.
+fn reassert_clipboard(content: &str, html: Option<&str>) {
+    use std::io::Write;
+
+    // Re-assert plain text
+    match Command::new("wl-copy")
+        .stdin(Stdio::piped())
+        .spawn()
+    {
+        Ok(mut child) => {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(content.as_bytes());
+            }
+            let _ = child.wait();
+        }
+        Err(e) => {
+            warn!("Failed to re-assert clipboard text: {e}");
+        }
+    }
+
+    // Re-assert HTML if available
+    if let Some(html_content) = html {
+        match Command::new("wl-copy")
+            .args(["--type", "text/html"])
+            .stdin(Stdio::piped())
+            .spawn()
+        {
+            Ok(mut child) => {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(html_content.as_bytes());
+                }
+                let _ = child.wait();
+            }
+            Err(e) => {
+                debug!("Failed to re-assert clipboard HTML: {e}");
+            }
+        }
+    }
+}
+
 /// Run a polling loop that reads the current clipboard text via wl-paste.
 fn run_text_watcher(
     monitor: &WaylandClipboard,
     tx: &mpsc::Sender<ClipItem>,
 ) -> Result<(), ClipboardError> {
     let mut last_hash: Option<String> = None;
+    let mut last_content: Option<String> = None;
+    let mut last_html: Option<String> = None;
 
     loop {
         // Read current clipboard text
@@ -204,19 +248,22 @@ fn run_text_watcher(
             .args(["--no-newline"])
             .output()?;
 
-        if !output.status.success() {
-            // Clipboard might be empty or contain non-text
+        if !output.status.success() || output.stdout.is_empty() {
+            // Clipboard is empty or non-text.
+            // If we previously had content, the source app likely closed.
+            // Re-assert the last known clipboard content.
+            if let Some(ref content) = last_content {
+                debug!(
+                    "Clipboard lost — re-asserting last known content ({} chars)",
+                    content.len()
+                );
+                reassert_clipboard(content, last_html.as_deref());
+            }
             thread::sleep(std::time::Duration::from_millis(500));
             continue;
         }
 
         let content = output.stdout;
-
-        // Skip empty content
-        if content.is_empty() {
-            thread::sleep(std::time::Duration::from_millis(500));
-            continue;
-        }
 
         // Skip content larger than max size
         if content.len() as u64 > monitor.max_content_size_bytes {
@@ -261,6 +308,10 @@ fn run_text_watcher(
 
         // Try to get HTML representation
         let html_content = WaylandClipboard::read_html_content();
+
+        // Update last known content for clipboard persistence
+        last_content = Some(text.clone());
+        last_html = html_content.clone();
 
         // Build metadata for links
         let metadata = if content_type == ContentType::Link {
@@ -508,5 +559,14 @@ mod tests {
             "floating_nodes": []
         });
         assert_eq!(find_focused_sway(&json), Some("Google-chrome".into()));
+    }
+
+    #[test]
+    fn test_reassert_clipboard_does_not_panic() {
+        // Verify the function doesn't panic with valid input.
+        // wl-copy may not be available in CI, but the function
+        // handles spawn failures gracefully via warn!/debug! logs.
+        reassert_clipboard("test content", None);
+        reassert_clipboard("test content", Some("<b>test</b>"));
     }
 }
