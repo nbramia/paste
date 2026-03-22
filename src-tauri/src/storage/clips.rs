@@ -203,6 +203,18 @@ impl Storage {
         Ok(())
     }
 
+    /// Get distinct source_app values for filter dropdowns.
+    pub fn get_distinct_source_apps(&self) -> Result<Vec<String>, StorageError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT source_app FROM clips WHERE source_app IS NOT NULL ORDER BY source_app"
+        )?;
+        let apps = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(apps)
+    }
+
     /// Get the content hash of the most recently created clip.
     pub fn get_most_recent_hash(&self) -> Result<Option<String>, StorageError> {
         let conn = self.conn.lock().unwrap();

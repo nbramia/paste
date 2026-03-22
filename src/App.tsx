@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Filmstrip } from "./components/Filmstrip";
+import { Search, type SearchFilters } from "./components/Search";
+import { useSearch } from "./hooks/useSearch";
 
 export interface ClipData {
   id: string;
@@ -28,6 +30,12 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabView>("history");
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const { results, isSearching, loading: searchLoading, search, clearSearch } = useSearch();
+
+  // The clips to display: search results when searching, all clips otherwise
+  const displayClips = isSearching ? results : clips;
+  const displayLoading = isSearching ? searchLoading : loading;
 
   const loadClips = useCallback(async () => {
     try {
@@ -50,19 +58,19 @@ function App() {
   }, [loadClips]);
 
   const pasteSelected = useCallback(async () => {
-    if (clips.length === 0) return;
-    const clip = clips[selectedIndex];
+    if (displayClips.length === 0) return;
+    const clip = displayClips[selectedIndex];
     if (!clip) return;
     try {
       await invoke("paste_clip", { id: clip.id });
     } catch (err) {
       console.error("Failed to paste:", err);
     }
-  }, [clips, selectedIndex]);
+  }, [displayClips, selectedIndex]);
 
   const deleteSelected = useCallback(async () => {
-    if (clips.length === 0) return;
-    const clip = clips[selectedIndex];
+    if (displayClips.length === 0) return;
+    const clip = displayClips[selectedIndex];
     if (!clip) return;
     try {
       await invoke("delete_clip", { id: clip.id });
@@ -70,14 +78,45 @@ function App() {
     } catch (err) {
       console.error("Failed to delete:", err);
     }
-  }, [clips, selectedIndex, loadClips]);
+  }, [displayClips, selectedIndex, loadClips]);
+
+  const handleSearch = useCallback(
+    (query: string, filters: SearchFilters) => {
+      search(query, filters);
+      setSelectedIndex(0);
+    },
+    [search],
+  );
+
+  const handleClearSearch = useCallback(() => {
+    clearSearch();
+    setSelectedIndex(0);
+  }, [clearSearch]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if search input is focused
+      const isSearchFocused = document.activeElement === searchRef.current;
+
+      // / or Ctrl+F to focus search
+      if (
+        (e.key === "/" && !isSearchFocused) ||
+        (e.key === "f" && (e.ctrlKey || e.metaKey))
+      ) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+
+      // Don't handle navigation keys when search is focused
+      if (isSearchFocused) return;
+
       switch (e.key) {
         case "ArrowRight":
           e.preventDefault();
-          setSelectedIndex((prev) => Math.min(prev + 1, clips.length - 1));
+          setSelectedIndex((prev) =>
+            Math.min(prev + 1, displayClips.length - 1),
+          );
           break;
         case "ArrowLeft":
           e.preventDefault();
@@ -105,7 +144,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clips, pasteSelected, deleteSelected]);
+  }, [displayClips, pasteSelected, deleteSelected]);
 
   // Scroll selected card into view
   useEffect(() => {
@@ -142,18 +181,29 @@ function App() {
         ))}
         <div className="flex-1" />
         <span className="text-xs text-neutral-500">
-          {clips.length > 0 ? `${clips.length} items` : ""}
+          {displayClips.length > 0
+            ? `${displayClips.length} item${displayClips.length !== 1 ? "s" : ""}`
+            : ""}
         </span>
       </div>
+
+      {/* Search bar */}
+      {activeTab === "history" && (
+        <Search
+          onSearch={handleSearch}
+          onClear={handleClearSearch}
+          searchRef={searchRef}
+        />
+      )}
 
       {/* Filmstrip content */}
       {activeTab === "history" ? (
         <Filmstrip
-          clips={clips}
+          clips={displayClips}
           selectedIndex={selectedIndex}
           onSelect={setSelectedIndex}
           onPaste={pasteSelected}
-          loading={loading}
+          loading={displayLoading}
           containerRef={containerRef}
         />
       ) : (
@@ -168,6 +218,7 @@ function App() {
       <div className="flex items-center gap-4 border-t border-neutral-700 px-4 py-1.5 text-xs text-neutral-500">
         <span>←→ Navigate</span>
         <span>Enter Paste</span>
+        <span>/ Search</span>
         <span>Del Remove</span>
         <span>Tab Switch view</span>
         <span>Esc Close</span>
