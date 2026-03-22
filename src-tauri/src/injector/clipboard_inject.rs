@@ -6,6 +6,13 @@ use std::io::Write;
 use log::{debug, warn};
 use super::{Injector, InjectorError};
 
+/// Rich clipboard content for multi-format paste.
+pub struct RichContent {
+    pub text: Option<String>,
+    pub html: Option<String>,
+    pub image_path: Option<String>,
+}
+
 /// Clipboard injection fallback.
 ///
 /// Works by: save clipboard -> set clipboard to content -> simulate Ctrl+V -> restore clipboard.
@@ -90,6 +97,14 @@ impl Injector for ClipboardInjector {
 
     fn name(&self) -> &'static str {
         "clipboard"
+    }
+
+    fn inject_rich(&self, content: &RichContent) -> Result<(), InjectorError> {
+        match self.display_server {
+            "wayland" => clipboard_inject_rich_wayland(content, "ydotool"),
+            "x11" => clipboard_inject_rich_x11(content),
+            _ => Err(InjectorError::Failed("Unknown display server".into())),
+        }
     }
 }
 
@@ -189,6 +204,163 @@ pub(crate) fn clipboard_inject_x11(text: &str) -> Result<(), InjectorError> {
     thread::sleep(Duration::from_millis(100));
 
     // 4. Restore old clipboard
+    if let Some(old) = old_clipboard {
+        if !old.is_empty() {
+            let mut restore = Command::new("xclip")
+                .args(["-selection", "clipboard"])
+                .stdin(std::process::Stdio::piped())
+                .spawn()?;
+            if let Some(mut stdin) = restore.stdin.take() {
+                let _ = stdin.write_all(&old);
+            }
+            let _ = restore.wait();
+        }
+    }
+
+    Ok(())
+}
+
+/// Paste rich content via clipboard on Wayland.
+/// Sets multiple MIME types so target apps get the best format.
+pub(crate) fn clipboard_inject_rich_wayland(content: &RichContent, key_tool: &str) -> Result<(), InjectorError> {
+    debug!("Rich clipboard inject (Wayland)");
+
+    // 1. Save current clipboard
+    let old_clipboard = Command::new("wl-paste")
+        .args(["--no-newline"])
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { Some(o.stdout) } else { None });
+
+    // 2. Set clipboard with appropriate MIME type
+    if let Some(ref image_path) = content.image_path {
+        // Image paste: set clipboard to image data
+        let path = std::path::Path::new(image_path);
+        if path.exists() {
+            let status = Command::new("wl-copy")
+                .args(["--type", "image/png"])
+                .stdin(std::process::Stdio::from(
+                    std::fs::File::open(path).map_err(|e| InjectorError::Failed(format!("Open image: {e}")))?
+                ))
+                .status()?;
+            if !status.success() {
+                warn!("wl-copy image failed");
+            }
+        }
+    } else if let Some(ref html) = content.html {
+        // HTML: set text/html which most apps prefer for rich content
+        let mut child = Command::new("wl-copy")
+            .args(["--type", "text/html"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(html.as_bytes())?;
+        }
+        child.wait()?;
+    } else if let Some(ref text) = content.text {
+        // Plain text only
+        let mut child = Command::new("wl-copy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes())?;
+        }
+        child.wait()?;
+    } else {
+        return Ok(()); // Nothing to paste
+    }
+
+    // 3. Brief delay for clipboard to settle
+    thread::sleep(Duration::from_millis(50));
+
+    // 4. Simulate Ctrl+V
+    let status = match key_tool {
+        "wtype" => Command::new("wtype")
+            .args(["-M", "ctrl", "-k", "v", "-m", "ctrl"])
+            .status()?,
+        "ydotool" | _ => Command::new("ydotool")
+            .args(["key", "29:1", "47:1", "47:0", "29:0"])
+            .status()?,
+    };
+    if !status.success() {
+        warn!("Ctrl+V simulation exited with {}", status);
+    }
+
+    // 5. Brief delay for paste to complete
+    thread::sleep(Duration::from_millis(100));
+
+    // 6. Restore old clipboard
+    if let Some(old) = old_clipboard {
+        if !old.is_empty() {
+            let mut restore = Command::new("wl-copy")
+                .stdin(std::process::Stdio::piped())
+                .spawn()?;
+            if let Some(mut stdin) = restore.stdin.take() {
+                let _ = stdin.write_all(&old);
+            }
+            let _ = restore.wait();
+        }
+    }
+
+    Ok(())
+}
+
+/// Paste rich content via clipboard on X11.
+pub(crate) fn clipboard_inject_rich_x11(content: &RichContent) -> Result<(), InjectorError> {
+    debug!("Rich clipboard inject (X11)");
+
+    // 1. Save current clipboard
+    let old_clipboard = Command::new("xclip")
+        .args(["-selection", "clipboard", "-o"])
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { Some(o.stdout) } else { None });
+
+    // 2. Set clipboard with appropriate type
+    if let Some(ref image_path) = content.image_path {
+        let path = std::path::Path::new(image_path);
+        if path.exists() {
+            let status = Command::new("xclip")
+                .args(["-selection", "clipboard", "-target", "image/png", "-i", image_path])
+                .status()?;
+            if !status.success() {
+                warn!("xclip image failed");
+            }
+        }
+    } else if let Some(ref html) = content.html {
+        // Set HTML via xclip
+        let mut child = Command::new("xclip")
+            .args(["-selection", "clipboard", "-target", "text/html"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(html.as_bytes())?;
+        }
+        child.wait()?;
+    } else if let Some(ref text) = content.text {
+        let mut child = Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes())?;
+        }
+        child.wait()?;
+    } else {
+        return Ok(());
+    }
+
+    // 3. Simulate Ctrl+V
+    thread::sleep(Duration::from_millis(50));
+    let status = Command::new("xdotool")
+        .args(["key", "--clearmodifiers", "ctrl+v"])
+        .status()?;
+    if !status.success() {
+        warn!("xdotool Ctrl+V exited with {}", status);
+    }
+
+    // 4. Restore clipboard
+    thread::sleep(Duration::from_millis(100));
     if let Some(old) = old_clipboard {
         if !old.is_empty() {
             let mut restore = Command::new("xclip")

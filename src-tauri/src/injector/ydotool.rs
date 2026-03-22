@@ -48,6 +48,11 @@ impl Injector for YdotoolInjector {
         Ok(())
     }
 
+    fn inject_rich(&self, content: &super::clipboard_inject::RichContent) -> Result<(), InjectorError> {
+        use super::clipboard_inject::clipboard_inject_rich_wayland;
+        clipboard_inject_rich_wayland(content, "ydotool")
+    }
+
     fn name(&self) -> &'static str {
         "ydotool"
     }
