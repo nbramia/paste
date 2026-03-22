@@ -74,6 +74,37 @@ fn delete_clip(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn search_clips(
+    state: tauri::State<'_, AppState>,
+    query: String,
+    content_type: Option<String>,
+    source_app: Option<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
+    pinboard_id: Option<String>,
+) -> Result<Vec<Clip>, String> {
+    let filters = ClipFilters {
+        content_type,
+        source_app,
+        date_from,
+        date_to,
+        pinboard_id,
+    };
+    state.storage
+        .search_clips(&query, &filters)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_source_apps(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    state.storage
+        .get_distinct_source_apps()
+        .map_err(|e| e.to_string())
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -101,6 +132,8 @@ pub fn run() {
             get_clips,
             paste_clip,
             delete_clip,
+            search_clips,
+            get_source_apps,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
