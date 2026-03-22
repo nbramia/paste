@@ -1,5 +1,6 @@
-import { RefObject, useCallback, useEffect } from "react";
+import { RefObject, useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { invoke } from "@tauri-apps/api/core";
 import { Card } from "../Card";
 import type { ClipData } from "../../App";
 import { useAnimation } from "../../hooks/useAnimation";
@@ -15,6 +16,7 @@ interface FilmstripProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
+  onClipCreated?: () => void;
 }
 
 export function Filmstrip({
@@ -28,8 +30,59 @@ export function Filmstrip({
   onLoadMore,
   hasMore,
   loadingMore,
+  onClipCreated,
 }: FilmstripProps) {
   const anim = useAnimation();
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+
+    // Check for dropped text
+    const text = e.dataTransfer.getData("text/plain");
+    if (text) {
+      try {
+        await invoke("create_clip_from_text", { text });
+        onClipCreated?.();
+      } catch (err) {
+        console.error("Failed to create clip from drop:", err);
+      }
+      return;
+    }
+
+    // Check for dropped files (read file names as text clips)
+    if (e.dataTransfer.files.length > 0) {
+      try {
+        for (const file of Array.from(e.dataTransfer.files)) {
+          // Read text files
+          if (file.type.startsWith("text/") || file.name.endsWith(".txt") || file.name.endsWith(".md")) {
+            const fileText = await file.text();
+            await invoke("create_clip_from_text", { text: fileText, contentType: "text" });
+          } else {
+            // For non-text files, store the file path/name as a file clip
+            await invoke("create_clip_from_text", {
+              text: file.name,
+              contentType: "file",
+            });
+          }
+        }
+        onClipCreated?.();
+      } catch (err) {
+        console.error("Failed to create clip from dropped file:", err);
+      }
+    }
+  }, [onClipCreated]);
 
   const handleScroll = useCallback(() => {
     if (!onLoadMore || !hasMore || loadingMore) return;
@@ -75,7 +128,12 @@ export function Filmstrip({
       role="listbox"
       aria-label="Clipboard history"
       aria-orientation="horizontal"
-      className="flex flex-1 items-stretch gap-3 overflow-x-auto px-4 py-3"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`flex flex-1 items-stretch gap-3 overflow-x-auto px-4 py-3 transition-colors ${
+        isDragOver ? "bg-blue-500/10 ring-2 ring-inset ring-blue-500/30" : ""
+      }`}
     >
       <AnimatePresence mode="popLayout">
         {clips.map((clip, index) => (

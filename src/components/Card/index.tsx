@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import type { ClipData } from "../../App";
 import { TextCard } from "./TextCard";
@@ -85,14 +85,45 @@ function CardBase({
   onPaste,
 }: CardProps) {
   const typeColor = typeColors[clip.content_type] || "bg-neutral-500";
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+
+    const handleDragStart = (e: DragEvent) => {
+      if (!e.dataTransfer) return;
+
+      // Set drag data based on content type
+      if (clip.text_content) {
+        e.dataTransfer.setData("text/plain", clip.text_content);
+      }
+
+      if (clip.content_type === "link" && clip.text_content) {
+        e.dataTransfer.setData("text/uri-list", clip.text_content);
+      }
+
+      if (clip.html_content) {
+        e.dataTransfer.setData("text/html", clip.html_content);
+      }
+
+      // Set drag effect
+      e.dataTransfer.effectAllowed = "copy";
+    };
+
+    el.addEventListener("dragstart", handleDragStart);
+    return () => el.removeEventListener("dragstart", handleDragStart);
+  }, [clip]);
 
   return (
     <motion.div
+      ref={cardRef}
       data-index={index}
       role="button"
       tabIndex={isSelected ? 0 : -1}
       aria-label={getCardLabel(clip)}
       aria-selected={isSelected || isMultiSelected}
+      draggable
       onClick={onSelect}
       onDoubleClick={onPaste}
       animate={{
