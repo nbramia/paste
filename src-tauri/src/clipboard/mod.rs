@@ -3,6 +3,8 @@
 pub mod detection;
 pub mod types;
 pub mod wayland;
+#[cfg(target_os = "linux")]
+pub mod x11;
 
 use std::sync::mpsc;
 use types::ClipItem;
