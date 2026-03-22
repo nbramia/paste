@@ -139,6 +139,29 @@ function App() {
     }
   }, [displayClips, selectedIndex, loadClips]);
 
+  const pastePlainSelected = useCallback(async () => {
+    if (displayClips.length === 0) return;
+    const clip = displayClips[selectedIndex];
+    if (!clip) return;
+    try {
+      await invoke("paste_clip_plain", { id: clip.id });
+    } catch (err) {
+      console.error("Failed to paste plain:", err);
+    }
+  }, [displayClips, selectedIndex]);
+
+  const toggleFavoriteSelected = useCallback(async () => {
+    if (displayClips.length === 0) return;
+    const clip = displayClips[selectedIndex];
+    if (!clip) return;
+    try {
+      await invoke("toggle_favorite", { id: clip.id });
+      await loadClips();
+    } catch (err) {
+      console.error("Failed to toggle favorite:", err);
+    }
+  }, [displayClips, selectedIndex, loadClips]);
+
   const handleSearch = useCallback(
     (query: string, filters: SearchFilters) => {
       search(query, filters);
@@ -208,6 +231,8 @@ function App() {
           e.preventDefault();
           if (showPreview) {
             setShowPreview(false);
+          } else if (isSearching) {
+            handleClearSearch();
           }
           break;
         case "ArrowRight":
@@ -222,12 +247,22 @@ function App() {
           break;
         case "Enter":
           e.preventDefault();
-          pasteSelected();
+          if (e.shiftKey) {
+            pastePlainSelected();
+          } else {
+            pasteSelected();
+          }
           break;
         case "Delete":
         case "Backspace":
           e.preventDefault();
           deleteSelected();
+          break;
+        case "f":
+          if (!e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            toggleFavoriteSelected();
+          }
           break;
         case "Tab":
           e.preventDefault();
@@ -242,7 +277,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [displayClips, selectedIndex, pasteSelected, deleteSelected, showPreview]);
+  }, [displayClips, selectedIndex, pasteSelected, pastePlainSelected, deleteSelected, toggleFavoriteSelected, showPreview, isSearching, handleClearSearch]);
 
   // Close preview when selection changes
   useEffect(() => {
@@ -391,11 +426,13 @@ function App() {
       <div className="flex items-center gap-4 border-t border-border-default px-4 py-1.5 text-xs text-text-muted">
         <span>←→ Navigate</span>
         <span>Enter Paste</span>
+        <span>⇧Enter Plain</span>
         <span>Space Preview</span>
+        <span>F Fav</span>
         <span>/ Search</span>
+        <span>⌃P Pin</span>
         <span>Del Remove</span>
-        <span>Ctrl+P Pin</span>
-        <span>Tab Switch view</span>
+        <span>Tab Views</span>
         <span>Esc Close</span>
       </div>
     </div>
