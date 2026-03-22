@@ -1,16 +1,29 @@
-import { useState } from "react";
-
-interface Clip {
-  id: string;
-  contentType: string;
-  textContent: string;
-  sourceApp: string;
-  createdAt: string;
-}
+import { useState, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { ClipData } from "../App";
 
 export function useClips() {
-  const [clips] = useState<Clip[]>([]);
-  const [loading] = useState(false);
+  const [clips, setClips] = useState<ClipData[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  return { clips, loading };
+  const loadClips = useCallback(async () => {
+    try {
+      setLoading(true);
+      const result = await invoke<ClipData[]>("get_clips", {
+        offset: 0,
+        limit: 50,
+      });
+      setClips(result);
+    } catch (err) {
+      console.error("Failed to load clips:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadClips();
+  }, [loadClips]);
+
+  return { clips, loading, reload: loadClips };
 }
