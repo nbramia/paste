@@ -1,54 +1,602 @@
+use chrono::{Datelike, Duration, Local};
+
 /// A parsed template token.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TemplateToken {
+    /// Plain text.
     Literal(String),
-    // Future tokens: DateFormat, Clipboard, CursorPosition, Shell, Nested, FillIn
+    /// Date/time format code (e.g., "Y" for %Y, "m" for %m).
+    DateFormat(String),
+    /// Date math: offset from current date/time (e.g., +5d, -1w, +3M).
+    DateMath {
+        offset: i64,
+        unit: DateMathUnit,
+        format: String, // output format, default "%Y-%m-%d"
+    },
+    /// Insert current clipboard content.
+    Clipboard,
+    /// Cursor position marker.
+    CursorPosition,
+}
+
+/// Units for date math.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DateMathUnit {
+    Minutes,
+    Hours,
+    Days,
+    Weeks,
+    Months,
+    Years,
+}
+
+/// Context for template evaluation.
+#[derive(Default)]
+pub struct ExpansionContext {
+    /// Current clipboard text content (for %clipboard macro).
+    pub clipboard_content: String,
+}
+
+/// Result of template expansion.
+#[derive(Debug, Clone)]
+pub struct ExpansionResult {
+    /// The expanded text.
+    pub text: String,
+    /// Optional cursor position (byte offset from start of text).
+    /// If set, the cursor should be moved to this position after injection.
+    pub cursor_offset: Option<usize>,
 }
 
 /// Parse a template string into tokens.
-/// For this initial implementation, the entire string is a single Literal token.
-/// Macro support (date, clipboard, etc.) will be added in later issues.
+///
+/// Macro syntax:
+/// - `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%A`, `%B`, `%p`, etc. -- date/time format codes
+/// - `%date(+5d)`, `%date(-1w)`, `%date(+3M)` -- date math
+/// - `%clipboard` -- insert clipboard content
+/// - `%|` -- cursor position marker
+/// - `%%` -- literal percent sign
+/// - Unknown `%X` -- left as literal text
 pub fn parse_template(template: &str) -> Vec<TemplateToken> {
-    vec![TemplateToken::Literal(template.to_string())]
-}
+    let mut tokens: Vec<TemplateToken> = Vec::new();
+    let mut chars = template.chars().peekable();
+    let mut current_literal = String::new();
 
-/// Evaluate parsed tokens into the final expansion text.
-pub fn evaluate_tokens(tokens: &[TemplateToken]) -> String {
-    let mut output = String::new();
-    for token in tokens {
-        match token {
-            TemplateToken::Literal(s) => output.push_str(s),
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            current_literal.push(ch);
+            continue;
+        }
+
+        // We have a '%' -- look at the next character
+        let Some(&next) = chars.peek() else {
+            // '%' at end of string -- treat as literal
+            current_literal.push('%');
+            continue;
+        };
+
+        match next {
+            // %% -> literal %
+            '%' => {
+                chars.next();
+                current_literal.push('%');
+            }
+            // %| -> cursor position
+            '|' => {
+                chars.next();
+                flush_literal(&mut current_literal, &mut tokens);
+                tokens.push(TemplateToken::CursorPosition);
+            }
+            // %d or %date(...)
+            'd' => {
+                // Check if it's %date(...)
+                let rest: String = chars.clone().take(4).collect();
+                if rest.starts_with("date") {
+                    // Look ahead further to see if there's a '(' after "date"
+                    let rest5: String = chars.clone().take(5).collect();
+                    if rest5.starts_with("date(") {
+                        // Consume "date("
+                        for _ in 0..5 {
+                            chars.next();
+                        }
+                        // Read until closing ')'
+                        let mut expr = String::new();
+                        let mut found_close = false;
+                        for c in chars.by_ref() {
+                            if c == ')' {
+                                found_close = true;
+                                break;
+                            }
+                            expr.push(c);
+                        }
+                        if found_close {
+                            flush_literal(&mut current_literal, &mut tokens);
+                            if let Some(token) = parse_date_math(&expr) {
+                                tokens.push(token);
+                            } else {
+                                // Invalid date math -- emit as literal
+                                current_literal.push_str(&format!("%date({expr})"));
+                            }
+                        } else {
+                            // No closing paren -- treat as literal
+                            current_literal.push_str(&format!("%date({expr}"));
+                        }
+                    } else {
+                        // %date without parens -- treat %d as day-of-month format code
+                        chars.next();
+                        flush_literal(&mut current_literal, &mut tokens);
+                        tokens.push(TemplateToken::DateFormat("d".to_string()));
+                    }
+                } else {
+                    // Just %d -- day of month
+                    chars.next();
+                    flush_literal(&mut current_literal, &mut tokens);
+                    tokens.push(TemplateToken::DateFormat("d".to_string()));
+                }
+            }
+            // %clipboard
+            'c' => {
+                let rest: String = chars.clone().take(9).collect();
+                if rest.starts_with("clipboard") {
+                    // Consume "clipboard" (9 chars)
+                    for _ in 0..9 {
+                        chars.next();
+                    }
+                    flush_literal(&mut current_literal, &mut tokens);
+                    tokens.push(TemplateToken::Clipboard);
+                } else {
+                    current_literal.push('%');
+                }
+            }
+            // Single-char date format codes
+            'Y' | 'm' | 'H' | 'M' | 'S' | 'A' | 'B' | 'p' | 'a' | 'b' | 'I' | 'j' | 'u'
+            | 'w' | 'e' | 'k' | 'l' | 'Z' | 'z' => {
+                chars.next();
+                flush_literal(&mut current_literal, &mut tokens);
+                tokens.push(TemplateToken::DateFormat(next.to_string()));
+            }
+            // Unknown %X -- leave as literal
+            _ => {
+                current_literal.push('%');
+            }
         }
     }
-    output
+
+    flush_literal(&mut current_literal, &mut tokens);
+    tokens
 }
 
-/// Convenience: parse and evaluate a template in one step.
+/// Flush accumulated literal text into a Literal token.
+fn flush_literal(current: &mut String, tokens: &mut Vec<TemplateToken>) {
+    if !current.is_empty() {
+        tokens.push(TemplateToken::Literal(std::mem::take(current)));
+    }
+}
+
+/// Parse a date math expression like "+5d", "-1w", "+3M".
+fn parse_date_math(expr: &str) -> Option<TemplateToken> {
+    let expr = expr.trim();
+    if expr.is_empty() {
+        return None;
+    }
+
+    // Parse sign
+    let (sign, rest) = if let Some(stripped) = expr.strip_prefix('+') {
+        (1i64, stripped)
+    } else if let Some(stripped) = expr.strip_prefix('-') {
+        (-1i64, stripped)
+    } else {
+        (1i64, expr)
+    };
+
+    // Split into number and unit
+    let num_end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    if num_end == 0 {
+        return None;
+    }
+
+    let number: i64 = rest[..num_end].parse().ok()?;
+    let unit_str = &rest[num_end..];
+
+    let unit = match unit_str {
+        "m" => DateMathUnit::Minutes,
+        "h" => DateMathUnit::Hours,
+        "d" => DateMathUnit::Days,
+        "w" => DateMathUnit::Weeks,
+        "M" => DateMathUnit::Months,
+        "y" => DateMathUnit::Years,
+        _ => return None,
+    };
+
+    Some(TemplateToken::DateMath {
+        offset: sign * number,
+        unit,
+        format: "%Y-%m-%d".to_string(),
+    })
+}
+
+/// Evaluate parsed tokens into an ExpansionResult.
+pub fn evaluate_tokens(tokens: &[TemplateToken], ctx: &ExpansionContext) -> ExpansionResult {
+    let now = Local::now();
+    let mut text = String::new();
+    let mut cursor_offset: Option<usize> = None;
+
+    for token in tokens {
+        match token {
+            TemplateToken::Literal(s) => {
+                text.push_str(s);
+            }
+            TemplateToken::DateFormat(code) => {
+                let fmt = format!("%{code}");
+                text.push_str(&now.format(&fmt).to_string());
+            }
+            TemplateToken::DateMath {
+                offset,
+                unit,
+                format,
+            } => {
+                let target = apply_date_math(&now, *offset, *unit);
+                text.push_str(&target.format(format).to_string());
+            }
+            TemplateToken::Clipboard => {
+                text.push_str(&ctx.clipboard_content);
+            }
+            TemplateToken::CursorPosition => {
+                cursor_offset = Some(text.len());
+            }
+        }
+    }
+
+    ExpansionResult {
+        text,
+        cursor_offset,
+    }
+}
+
+/// Apply date math to a datetime.
+fn apply_date_math(
+    base: &chrono::DateTime<Local>,
+    offset: i64,
+    unit: DateMathUnit,
+) -> chrono::DateTime<Local> {
+    match unit {
+        DateMathUnit::Minutes => *base + Duration::minutes(offset),
+        DateMathUnit::Hours => *base + Duration::hours(offset),
+        DateMathUnit::Days => *base + Duration::days(offset),
+        DateMathUnit::Weeks => *base + Duration::weeks(offset),
+        DateMathUnit::Months => {
+            // chrono doesn't have Duration::months, so manually adjust
+            let target_month = base.month0() as i64 + offset;
+            let years_offset = target_month.div_euclid(12);
+            let new_month0 = target_month.rem_euclid(12) as u32;
+            let new_year = base.year() + years_offset as i32;
+            // Clamp day to valid range for the target month
+            let max_day = days_in_month(new_year, new_month0 + 1);
+            let new_day = base.day().min(max_day);
+            base.with_year(new_year)
+                .and_then(|d| d.with_month0(new_month0))
+                .and_then(|d| d.with_day(new_day))
+                .unwrap_or(*base)
+        }
+        DateMathUnit::Years => {
+            let new_year = base.year() + offset as i32;
+            // Handle Feb 29 -> Feb 28 in non-leap years
+            let max_day = days_in_month(new_year, base.month());
+            let new_day = base.day().min(max_day);
+            base.with_year(new_year)
+                .and_then(|d| d.with_day(new_day))
+                .unwrap_or(*base)
+        }
+    }
+}
+
+/// Get the number of days in a month.
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
+}
+
+/// Convenience: parse and evaluate a template with default context.
 pub fn expand_template(template: &str) -> String {
     let tokens = parse_template(template);
-    evaluate_tokens(&tokens)
+    let ctx = ExpansionContext::default();
+    evaluate_tokens(&tokens, &ctx).text
+}
+
+/// Parse and evaluate with a full context.
+pub fn expand_template_with_context(template: &str, ctx: &ExpansionContext) -> ExpansionResult {
+    let tokens = parse_template(template);
+    evaluate_tokens(&tokens, ctx)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // --- Parsing tests ---
+
     #[test]
-    fn test_literal_template() {
+    fn test_parse_plain_literal() {
         let tokens = parse_template("Hello, world!");
         assert_eq!(tokens, vec![TemplateToken::Literal("Hello, world!".into())]);
     }
 
     #[test]
-    fn test_evaluate_literal() {
-        let result = expand_template("Best regards,\nJohn");
-        assert_eq!(result, "Best regards,\nJohn");
+    fn test_parse_empty() {
+        let tokens = parse_template("");
+        assert!(tokens.is_empty());
     }
 
     #[test]
-    fn test_empty_template() {
-        let result = expand_template("");
-        assert_eq!(result, "");
+    fn test_parse_date_format_codes() {
+        let tokens = parse_template("%Y-%m-%d");
+        assert_eq!(tokens.len(), 5);
+        assert_eq!(tokens[0], TemplateToken::DateFormat("Y".into()));
+        assert_eq!(tokens[1], TemplateToken::Literal("-".into()));
+        assert_eq!(tokens[2], TemplateToken::DateFormat("m".into()));
+        assert_eq!(tokens[3], TemplateToken::Literal("-".into()));
+        assert_eq!(tokens[4], TemplateToken::DateFormat("d".into()));
+    }
+
+    #[test]
+    fn test_parse_time_format() {
+        let tokens = parse_template("%H:%M:%S");
+        assert_eq!(tokens.len(), 5);
+        assert_eq!(tokens[0], TemplateToken::DateFormat("H".into()));
+        assert_eq!(tokens[2], TemplateToken::DateFormat("M".into()));
+        assert_eq!(tokens[4], TemplateToken::DateFormat("S".into()));
+    }
+
+    #[test]
+    fn test_parse_clipboard() {
+        let tokens = parse_template("Hello %clipboard!");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0], TemplateToken::Literal("Hello ".into()));
+        assert_eq!(tokens[1], TemplateToken::Clipboard);
+        assert_eq!(tokens[2], TemplateToken::Literal("!".into()));
+    }
+
+    #[test]
+    fn test_parse_cursor_position() {
+        let tokens = parse_template("Dear %|,");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0], TemplateToken::Literal("Dear ".into()));
+        assert_eq!(tokens[1], TemplateToken::CursorPosition);
+        assert_eq!(tokens[2], TemplateToken::Literal(",".into()));
+    }
+
+    #[test]
+    fn test_parse_escaped_percent() {
+        let tokens = parse_template("100%%");
+        assert_eq!(tokens, vec![TemplateToken::Literal("100%".into())]);
+    }
+
+    #[test]
+    fn test_parse_date_math() {
+        let tokens = parse_template("%date(+5d)");
+        assert_eq!(tokens.len(), 1);
+        match &tokens[0] {
+            TemplateToken::DateMath { offset, unit, .. } => {
+                assert_eq!(*offset, 5);
+                assert_eq!(*unit, DateMathUnit::Days);
+            }
+            _ => panic!("Expected DateMath"),
+        }
+    }
+
+    #[test]
+    fn test_parse_date_math_negative() {
+        let tokens = parse_template("%date(-1w)");
+        match &tokens[0] {
+            TemplateToken::DateMath { offset, unit, .. } => {
+                assert_eq!(*offset, -1);
+                assert_eq!(*unit, DateMathUnit::Weeks);
+            }
+            _ => panic!("Expected DateMath"),
+        }
+    }
+
+    #[test]
+    fn test_parse_date_math_months() {
+        let tokens = parse_template("%date(+3M)");
+        match &tokens[0] {
+            TemplateToken::DateMath { offset, unit, .. } => {
+                assert_eq!(*offset, 3);
+                assert_eq!(*unit, DateMathUnit::Months);
+            }
+            _ => panic!("Expected DateMath"),
+        }
+    }
+
+    #[test]
+    fn test_parse_date_math_years() {
+        let tokens = parse_template("%date(+1y)");
+        match &tokens[0] {
+            TemplateToken::DateMath { offset, unit, .. } => {
+                assert_eq!(*offset, 1);
+                assert_eq!(*unit, DateMathUnit::Years);
+            }
+            _ => panic!("Expected DateMath"),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_date_math_as_literal() {
+        let tokens = parse_template("%date(+5x)");
+        // Invalid unit 'x' -- should be left as literal
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], TemplateToken::Literal("%date(+5x)".into()));
+    }
+
+    #[test]
+    fn test_parse_unknown_macro_as_literal() {
+        let tokens = parse_template("hello %Q world");
+        // %Q is unknown -- left as literal "%Q"
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(
+            tokens[0],
+            TemplateToken::Literal("hello %Q world".into())
+        );
+    }
+
+    #[test]
+    fn test_parse_percent_at_end() {
+        let tokens = parse_template("hello%");
+        assert_eq!(tokens, vec![TemplateToken::Literal("hello%".into())]);
+    }
+
+    #[test]
+    fn test_parse_complex_template() {
+        let tokens = parse_template("Meeting on %Y-%m-%d at %H:%M with %clipboard");
+        // Should have: "Meeting on ", %Y, "-", %m, "-", %d, " at ", %H, ":", %M, " with ", %clipboard
+        assert!(tokens.len() >= 10);
+        assert!(tokens.contains(&TemplateToken::Clipboard));
+    }
+
+    // --- Evaluation tests ---
+
+    #[test]
+    fn test_evaluate_date_year() {
+        let now = Local::now();
+        let result = expand_template("%Y");
+        assert_eq!(result, now.format("%Y").to_string());
+    }
+
+    #[test]
+    fn test_evaluate_date_full() {
+        let now = Local::now();
+        let result = expand_template("%Y-%m-%d");
+        assert_eq!(result, now.format("%Y-%m-%d").to_string());
+    }
+
+    #[test]
+    fn test_evaluate_time() {
+        let now = Local::now();
+        let result = expand_template("%H:%M");
+        let expected = now.format("%H:%M").to_string();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_evaluate_clipboard() {
+        let ctx = ExpansionContext {
+            clipboard_content: "pasted text".to_string(),
+        };
+        let result = expand_template_with_context("Start: %clipboard :end", &ctx);
+        assert_eq!(result.text, "Start: pasted text :end");
+    }
+
+    #[test]
+    fn test_evaluate_empty_clipboard() {
+        let ctx = ExpansionContext {
+            clipboard_content: String::new(),
+        };
+        let result = expand_template_with_context("(%clipboard)", &ctx);
+        assert_eq!(result.text, "()");
+    }
+
+    #[test]
+    fn test_evaluate_cursor_position() {
+        let ctx = ExpansionContext::default();
+        let result = expand_template_with_context("Dear %|,\nBest regards", &ctx);
+        assert_eq!(result.text, "Dear ,\nBest regards");
+        assert_eq!(result.cursor_offset, Some(5)); // after "Dear "
+    }
+
+    #[test]
+    fn test_evaluate_no_cursor() {
+        let ctx = ExpansionContext::default();
+        let result = expand_template_with_context("Hello world", &ctx);
+        assert_eq!(result.text, "Hello world");
+        assert!(result.cursor_offset.is_none());
+    }
+
+    #[test]
+    fn test_evaluate_date_math_days() {
+        let now = Local::now();
+        let expected = (now + Duration::days(5)).format("%Y-%m-%d").to_string();
+        let result = expand_template("%date(+5d)");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_evaluate_date_math_negative_days() {
+        let now = Local::now();
+        let expected = (now - Duration::days(3)).format("%Y-%m-%d").to_string();
+        let result = expand_template("%date(-3d)");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_evaluate_date_math_weeks() {
+        let now = Local::now();
+        let expected = (now + Duration::weeks(2)).format("%Y-%m-%d").to_string();
+        let result = expand_template("%date(+2w)");
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_evaluate_escaped_percent() {
+        let result = expand_template("100%% complete");
+        assert_eq!(result, "100% complete");
+    }
+
+    #[test]
+    fn test_evaluate_mixed_template() {
+        let ctx = ExpansionContext {
+            clipboard_content: "World".to_string(),
+        };
+        let result = expand_template_with_context("Hello %clipboard on %Y-%m-%d", &ctx);
+        let now = Local::now();
+        let expected = format!("Hello World on {}", now.format("%Y-%m-%d"));
+        assert_eq!(result.text, expected);
+    }
+
+    #[test]
+    fn test_evaluate_plain_text_unchanged() {
+        let result = expand_template("No macros here");
+        assert_eq!(result, "No macros here");
+    }
+
+    // --- Date math edge cases ---
+
+    #[test]
+    fn test_days_in_month() {
+        assert_eq!(days_in_month(2024, 2), 29); // leap year
+        assert_eq!(days_in_month(2023, 2), 28); // non-leap
+        assert_eq!(days_in_month(2024, 1), 31);
+        assert_eq!(days_in_month(2024, 4), 30);
+    }
+
+    #[test]
+    fn test_date_math_month_overflow() {
+        // Adding months should handle year rollover
+        let _tokens = parse_template("%date(+13M)");
+        // Should produce a valid date ~13 months from now
+        let result = expand_template("%date(+13M)");
+        // Just verify it's a valid date format
+        assert_eq!(result.len(), 10); // YYYY-MM-DD
+        assert!(result.contains('-'));
+    }
+
+    // --- Backward compatibility ---
+
+    #[test]
+    fn test_expand_template_still_works() {
+        // The convenience function should still work for plain text
+        let result = expand_template("Hello");
+        assert_eq!(result, "Hello");
     }
 
     #[test]
@@ -56,5 +604,11 @@ mod tests {
         let template = "Line 1\nLine 2\nLine 3";
         let result = expand_template(template);
         assert_eq!(result, template);
+    }
+
+    #[test]
+    fn test_empty_template() {
+        let result = expand_template("");
+        assert_eq!(result, "");
     }
 }
