@@ -1,4 +1,42 @@
+use std::collections::HashMap;
+
 use chrono::{Datelike, Duration, Local};
+use serde::{Deserialize, Serialize};
+
+/// Specification for a fill-in text field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FillInSpec {
+    pub name: String,
+    pub default_value: Option<String>,
+}
+
+/// Specification for a fill-in popup/dropdown field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FillPopupSpec {
+    pub name: String,
+    pub options: Vec<String>,
+}
+
+/// A fill-in field descriptor (for sending to the frontend dialog).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum FillInField {
+    #[serde(rename = "text")]
+    Text {
+        name: String,
+        default_value: Option<String>,
+    },
+    #[serde(rename = "textarea")]
+    TextArea {
+        name: String,
+        default_value: Option<String>,
+    },
+    #[serde(rename = "popup")]
+    Popup {
+        name: String,
+        options: Vec<String>,
+    },
+}
 
 /// A parsed template token.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +55,12 @@ pub enum TemplateToken {
     Clipboard,
     /// Cursor position marker.
     CursorPosition,
+    /// Fill-in: single-line text input.
+    FillIn(FillInSpec),
+    /// Fill-in: multi-line text area.
+    FillArea(FillInSpec),
+    /// Fill-in: popup/dropdown menu.
+    FillPopup(FillPopupSpec),
 }
 
 /// Units for date math.
@@ -31,10 +75,20 @@ pub enum DateMathUnit {
 }
 
 /// Context for template evaluation.
-#[derive(Default)]
 pub struct ExpansionContext {
     /// Current clipboard text content (for %clipboard macro).
     pub clipboard_content: String,
+    /// User-provided values for fill-in fields (keyed by field name).
+    pub fill_values: HashMap<String, String>,
+}
+
+impl Default for ExpansionContext {
+    fn default() -> Self {
+        Self {
+            clipboard_content: String::new(),
+            fill_values: HashMap::new(),
+        }
+    }
 }
 
 /// Result of template expansion.
@@ -154,6 +208,83 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                 flush_literal(&mut current_literal, &mut tokens);
                 tokens.push(TemplateToken::DateFormat(next.to_string()));
             }
+            // %fill(...), %fillarea(...), %fillpopup(...)
+            'f' => {
+                let rest: String = chars.clone().take(10).collect();
+                if rest.starts_with("illpopup(") {
+                    // %fillpopup(name:opt1:opt2:opt3)
+                    for _ in 0..9 {
+                        chars.next();
+                    }
+                    let mut inner = String::new();
+                    let mut found_close = false;
+                    while let Some(c) = chars.next() {
+                        if c == ')' {
+                            found_close = true;
+                            break;
+                        }
+                        inner.push(c);
+                    }
+                    if found_close {
+                        flush_literal(&mut current_literal, &mut tokens);
+                        let parts: Vec<&str> = inner.split(':').collect();
+                        if !parts.is_empty() {
+                            let name = parts[0].to_string();
+                            let options: Vec<String> =
+                                parts[1..].iter().map(|s| s.to_string()).collect();
+                            tokens
+                                .push(TemplateToken::FillPopup(FillPopupSpec { name, options }));
+                        }
+                    } else {
+                        current_literal.push_str(&format!("%fillpopup({inner}"));
+                    }
+                } else if rest.starts_with("illarea(") {
+                    // %fillarea(name)
+                    for _ in 0..8 {
+                        chars.next();
+                    }
+                    let mut inner = String::new();
+                    let mut found_close = false;
+                    while let Some(c) = chars.next() {
+                        if c == ')' {
+                            found_close = true;
+                            break;
+                        }
+                        inner.push(c);
+                    }
+                    if found_close {
+                        flush_literal(&mut current_literal, &mut tokens);
+                        tokens.push(TemplateToken::FillArea(FillInSpec {
+                            name: inner.clone(),
+                            default_value: None,
+                        }));
+                    } else {
+                        current_literal.push_str(&format!("%fillarea({inner}"));
+                    }
+                } else if rest.starts_with("ill(") {
+                    // %fill(name) or %fill(name:default=value)
+                    for _ in 0..4 {
+                        chars.next();
+                    }
+                    let mut inner = String::new();
+                    let mut found_close = false;
+                    while let Some(c) = chars.next() {
+                        if c == ')' {
+                            found_close = true;
+                            break;
+                        }
+                        inner.push(c);
+                    }
+                    if found_close {
+                        flush_literal(&mut current_literal, &mut tokens);
+                        tokens.push(parse_fill_in(&inner));
+                    } else {
+                        current_literal.push_str(&format!("%fill({inner}"));
+                    }
+                } else {
+                    current_literal.push('%');
+                }
+            }
             // Unknown %X -- leave as literal
             _ => {
                 current_literal.push('%');
@@ -169,6 +300,24 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
 fn flush_literal(current: &mut String, tokens: &mut Vec<TemplateToken>) {
     if !current.is_empty() {
         tokens.push(TemplateToken::Literal(std::mem::take(current)));
+    }
+}
+
+/// Parse a fill-in specifier from the inner text of `%fill(...)`.
+fn parse_fill_in(inner: &str) -> TemplateToken {
+    // Check for :default=value syntax
+    if let Some(idx) = inner.find(":default=") {
+        let name = inner[..idx].to_string();
+        let default_value = inner[idx + 9..].to_string();
+        TemplateToken::FillIn(FillInSpec {
+            name,
+            default_value: Some(default_value),
+        })
+    } else {
+        TemplateToken::FillIn(FillInSpec {
+            name: inner.to_string(),
+            default_value: None,
+        })
     }
 }
 
@@ -245,6 +394,27 @@ pub fn evaluate_tokens(tokens: &[TemplateToken], ctx: &ExpansionContext) -> Expa
             TemplateToken::CursorPosition => {
                 cursor_offset = Some(text.len());
             }
+            TemplateToken::FillIn(spec) => {
+                if let Some(val) = ctx.fill_values.get(&spec.name) {
+                    text.push_str(val);
+                } else if let Some(ref default) = spec.default_value {
+                    text.push_str(default);
+                }
+            }
+            TemplateToken::FillArea(spec) => {
+                if let Some(val) = ctx.fill_values.get(&spec.name) {
+                    text.push_str(val);
+                } else if let Some(ref default) = spec.default_value {
+                    text.push_str(default);
+                }
+            }
+            TemplateToken::FillPopup(spec) => {
+                if let Some(val) = ctx.fill_values.get(&spec.name) {
+                    text.push_str(val);
+                } else if let Some(first) = spec.options.first() {
+                    text.push_str(first);
+                }
+            }
         }
     }
 
@@ -318,6 +488,55 @@ pub fn expand_template(template: &str) -> String {
 pub fn expand_template_with_context(template: &str, ctx: &ExpansionContext) -> ExpansionResult {
     let tokens = parse_template(template);
     evaluate_tokens(&tokens, ctx)
+}
+
+/// Extract fill-in field specifications from parsed tokens.
+/// Returns the list of fields that need user input, deduplicated by name.
+pub fn extract_fill_in_fields(tokens: &[TemplateToken]) -> Vec<FillInField> {
+    let mut fields = Vec::new();
+    let mut seen_names = std::collections::HashSet::new();
+
+    for token in tokens {
+        match token {
+            TemplateToken::FillIn(spec) => {
+                if seen_names.insert(spec.name.clone()) {
+                    fields.push(FillInField::Text {
+                        name: spec.name.clone(),
+                        default_value: spec.default_value.clone(),
+                    });
+                }
+            }
+            TemplateToken::FillArea(spec) => {
+                if seen_names.insert(spec.name.clone()) {
+                    fields.push(FillInField::TextArea {
+                        name: spec.name.clone(),
+                        default_value: spec.default_value.clone(),
+                    });
+                }
+            }
+            TemplateToken::FillPopup(spec) => {
+                if seen_names.insert(spec.name.clone()) {
+                    fields.push(FillInField::Popup {
+                        name: spec.name.clone(),
+                        options: spec.options.clone(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    fields
+}
+
+/// Check if a template has any fill-in fields.
+pub fn has_fill_in_fields(template: &str) -> bool {
+    let tokens = parse_template(template);
+    tokens.iter().any(|t| {
+        matches!(
+            t,
+            TemplateToken::FillIn(_) | TemplateToken::FillArea(_) | TemplateToken::FillPopup(_)
+        )
+    })
 }
 
 #[cfg(test)]
@@ -492,6 +711,7 @@ mod tests {
     fn test_evaluate_clipboard() {
         let ctx = ExpansionContext {
             clipboard_content: "pasted text".to_string(),
+            ..Default::default()
         };
         let result = expand_template_with_context("Start: %clipboard :end", &ctx);
         assert_eq!(result.text, "Start: pasted text :end");
@@ -501,6 +721,7 @@ mod tests {
     fn test_evaluate_empty_clipboard() {
         let ctx = ExpansionContext {
             clipboard_content: String::new(),
+            ..Default::default()
         };
         let result = expand_template_with_context("(%clipboard)", &ctx);
         assert_eq!(result.text, "()");
@@ -556,6 +777,7 @@ mod tests {
     fn test_evaluate_mixed_template() {
         let ctx = ExpansionContext {
             clipboard_content: "World".to_string(),
+            ..Default::default()
         };
         let result = expand_template_with_context("Hello %clipboard on %Y-%m-%d", &ctx);
         let now = Local::now();
@@ -610,5 +832,107 @@ mod tests {
     fn test_empty_template() {
         let result = expand_template("");
         assert_eq!(result, "");
+    }
+
+    // --- Fill-in field tests ---
+
+    #[test]
+    fn test_parse_fill_in() {
+        let tokens = parse_template("Hello %fill(name)!");
+        assert_eq!(tokens.len(), 3);
+        match &tokens[1] {
+            TemplateToken::FillIn(spec) => {
+                assert_eq!(spec.name, "name");
+                assert!(spec.default_value.is_none());
+            }
+            _ => panic!("Expected FillIn"),
+        }
+    }
+
+    #[test]
+    fn test_parse_fill_in_with_default() {
+        let tokens = parse_template("%fill(name:default=World)");
+        match &tokens[0] {
+            TemplateToken::FillIn(spec) => {
+                assert_eq!(spec.name, "name");
+                assert_eq!(spec.default_value.as_deref(), Some("World"));
+            }
+            _ => panic!("Expected FillIn"),
+        }
+    }
+
+    #[test]
+    fn test_parse_fillarea() {
+        let tokens = parse_template("%fillarea(notes)");
+        match &tokens[0] {
+            TemplateToken::FillArea(spec) => {
+                assert_eq!(spec.name, "notes");
+            }
+            _ => panic!("Expected FillArea"),
+        }
+    }
+
+    #[test]
+    fn test_parse_fillpopup() {
+        let tokens = parse_template("%fillpopup(tone:Professional:Casual:Formal)");
+        match &tokens[0] {
+            TemplateToken::FillPopup(spec) => {
+                assert_eq!(spec.name, "tone");
+                assert_eq!(spec.options, vec!["Professional", "Casual", "Formal"]);
+            }
+            _ => panic!("Expected FillPopup"),
+        }
+    }
+
+    #[test]
+    fn test_evaluate_fill_in_with_values() {
+        let mut ctx = ExpansionContext::default();
+        ctx.fill_values.insert("name".into(), "Alice".into());
+        let result = expand_template_with_context("Hello %fill(name)!", &ctx);
+        assert_eq!(result.text, "Hello Alice!");
+    }
+
+    #[test]
+    fn test_evaluate_fill_in_default() {
+        let ctx = ExpansionContext::default();
+        let result = expand_template_with_context("Hello %fill(name:default=World)!", &ctx);
+        assert_eq!(result.text, "Hello World!");
+    }
+
+    #[test]
+    fn test_evaluate_fillpopup_with_value() {
+        let mut ctx = ExpansionContext::default();
+        ctx.fill_values.insert("tone".into(), "Casual".into());
+        let result =
+            expand_template_with_context("Tone: %fillpopup(tone:Pro:Casual:Formal)", &ctx);
+        assert_eq!(result.text, "Tone: Casual");
+    }
+
+    #[test]
+    fn test_evaluate_fillpopup_default_first() {
+        let ctx = ExpansionContext::default();
+        let result = expand_template_with_context("%fillpopup(tone:Pro:Casual)", &ctx);
+        assert_eq!(result.text, "Pro");
+    }
+
+    #[test]
+    fn test_extract_fill_in_fields() {
+        let tokens =
+            parse_template("Dear %fill(name), %fillpopup(tone:Pro:Casual). %fillarea(body)");
+        let fields = extract_fill_in_fields(&tokens);
+        assert_eq!(fields.len(), 3);
+    }
+
+    #[test]
+    fn test_extract_deduplicates() {
+        let tokens = parse_template("%fill(name) and %fill(name) again");
+        let fields = extract_fill_in_fields(&tokens);
+        assert_eq!(fields.len(), 1); // same name, deduplicated
+    }
+
+    #[test]
+    fn test_has_fill_in_fields() {
+        assert!(has_fill_in_fields("Hello %fill(name)"));
+        assert!(!has_fill_in_fields("Hello %Y-%m-%d"));
     }
 }

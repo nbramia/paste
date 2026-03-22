@@ -104,7 +104,7 @@ export function SnippetEditor({ snippet, groups, onSave, onClose }: SnippetEdito
           className="mb-2 w-full rounded bg-surface-secondary px-3 py-1.5 font-mono text-sm text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-blue-500"
         />
         <p className="mb-3 text-[10px] text-text-faint">
-          Macros: %Y (year) %m (month) %d (day) %H (hour) %M (min) %clipboard %date(+5d) %| (cursor)
+          Macros: %Y (year) %m (month) %d (day) %H (hour) %M (min) %clipboard %date(+5d) %| (cursor) %fill(name) %fillarea(name) %fillpopup(name:opt1:opt2)
         </p>
 
         {/* Content type */}
