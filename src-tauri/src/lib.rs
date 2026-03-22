@@ -8,6 +8,7 @@ mod storage;
 mod tray;
 
 use std::collections::HashMap;
+use std::time::Instant;
 use std::sync::{Arc, Mutex};
 use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup, StorageStats}};
 use injector::{select_injector, Injector, RichContent};
@@ -33,6 +34,7 @@ fn get_clips(
     source_app: Option<String>,
     pinboard_id: Option<String>,
 ) -> Result<Vec<Clip>, String> {
+    let start = Instant::now();
     let filters = ClipFilters {
         content_type,
         source_app,
@@ -40,9 +42,16 @@ fn get_clips(
         date_to: None,
         pinboard_id,
     };
-    state.storage
+    let result = state.storage
         .get_clips(offset, limit, &filters)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    let elapsed = start.elapsed();
+    log::debug!(
+        "get_clips: {}ms ({} results)",
+        elapsed.as_millis(),
+        result.as_ref().map(|r| r.len()).unwrap_or(0)
+    );
+    result
 }
 
 #[tauri::command]
@@ -50,6 +59,8 @@ fn paste_clip(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
+    let start = Instant::now();
+
     // Get the clip from storage
     let clip = state.storage
         .get_clip_by_id(&id)
@@ -71,6 +82,9 @@ fn paste_clip(
     state.storage
         .increment_access_count(&id)
         .map_err(|e| e.to_string())?;
+
+    let elapsed = start.elapsed();
+    log::debug!("paste_clip: {}ms", elapsed.as_millis());
 
     Ok(())
 }
@@ -95,6 +109,7 @@ fn search_clips(
     date_to: Option<String>,
     pinboard_id: Option<String>,
 ) -> Result<Vec<Clip>, String> {
+    let start = Instant::now();
     let filters = ClipFilters {
         content_type,
         source_app,
@@ -102,9 +117,17 @@ fn search_clips(
         date_to,
         pinboard_id,
     };
-    state.storage
+    let result = state.storage
         .search_clips(&query, &filters)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string());
+    let elapsed = start.elapsed();
+    log::debug!(
+        "search_clips '{}': {}ms ({} results)",
+        query,
+        elapsed.as_millis(),
+        result.as_ref().map(|r| r.len()).unwrap_or(0)
+    );
+    result
 }
 
 #[tauri::command]
