@@ -13,6 +13,7 @@ pub enum HotkeyAction {
     PasteStackMode,
     QuickCopyToPinboard,
     ToggleExpander,
+    QuickPaste(u8),  // 1-9: paste Nth most recent clip
 }
 
 impl std::fmt::Display for HotkeyAction {
@@ -22,6 +23,7 @@ impl std::fmt::Display for HotkeyAction {
             HotkeyAction::PasteStackMode => write!(f, "PasteStackMode"),
             HotkeyAction::QuickCopyToPinboard => write!(f, "QuickCopyToPinboard"),
             HotkeyAction::ToggleExpander => write!(f, "ToggleExpander"),
+            HotkeyAction::QuickPaste(n) => write!(f, "QuickPaste({})", n),
         }
     }
 }
@@ -259,6 +261,37 @@ fn monitor_device(
                         }
                     }
 
+                    // Check for Quick Paste (Super + number key 1-9)
+                    if pressed && modifiers.super_key {
+                        let quick_paste_n = match key {
+                            KeyCode::KEY_1 => Some(1u8),
+                            KeyCode::KEY_2 => Some(2),
+                            KeyCode::KEY_3 => Some(3),
+                            KeyCode::KEY_4 => Some(4),
+                            KeyCode::KEY_5 => Some(5),
+                            KeyCode::KEY_6 => Some(6),
+                            KeyCode::KEY_7 => Some(7),
+                            KeyCode::KEY_8 => Some(8),
+                            KeyCode::KEY_9 => Some(9),
+                            _ => None,
+                        };
+                        if let Some(n) = quick_paste_n {
+                            debug!("Quick Paste triggered: Super+{}", n);
+                            if hotkey_tx
+                                .send(HotkeyEvent {
+                                    action: HotkeyAction::QuickPaste(n),
+                                })
+                                .is_err()
+                            {
+                                info!(
+                                    "Hotkey channel closed, stopping device monitor for {}",
+                                    name
+                                );
+                                return;
+                            }
+                        }
+                    }
+
                     // Forward keystroke to text expander channel
                     if let Some(ref ktx) = keystroke_tx {
                         if (pressed || released)
@@ -322,6 +355,7 @@ mod tests {
             "QuickCopyToPinboard"
         );
         assert_eq!(HotkeyAction::ToggleExpander.to_string(), "ToggleExpander");
+        assert_eq!(HotkeyAction::QuickPaste(3).to_string(), "QuickPaste(3)");
     }
 
     #[test]
