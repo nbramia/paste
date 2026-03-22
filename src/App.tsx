@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { Filmstrip } from "./components/Filmstrip";
 import { Search, type SearchFilters } from "./components/Search";
 import { useSearch } from "./hooks/useSearch";
+import { usePinboards } from "./hooks/usePinboards";
+import { PinboardView, PinboardPicker, CreatePinboardDialog } from "./components/Pinboard";
 
 export interface ClipData {
   id: string;
@@ -32,6 +34,18 @@ function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const { results, isSearching, loading: searchLoading, search, clearSearch } = useSearch();
+
+  // Pinboard state
+  const {
+    pinboards,
+    reload: reloadPinboards,
+    createPinboard,
+    updatePinboard,
+    deletePinboard,
+    addClipToPinboard,
+  } = usePinboards();
+  const [showPinboardPicker, setShowPinboardPicker] = useState(false);
+  const [showCreatePinboard, setShowCreatePinboard] = useState(false);
 
   // The clips to display: search results when searching, all clips otherwise
   const displayClips = isSearching ? results : clips;
@@ -93,10 +107,32 @@ function App() {
     setSelectedIndex(0);
   }, [clearSearch]);
 
+  const handlePinboardSelect = useCallback(async (pinboardId: string) => {
+    const clip = displayClips[selectedIndex];
+    if (!clip) return;
+    await addClipToPinboard(clip.id, pinboardId);
+    setShowPinboardPicker(false);
+    await loadClips();
+  }, [displayClips, selectedIndex, addClipToPinboard, loadClips]);
+
+  const handleCreatePinboardFromPicker = useCallback(async (name: string, color: string) => {
+    await createPinboard(name, color);
+    setShowCreatePinboard(false);
+  }, [createPinboard]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Check if search input is focused
       const isSearchFocused = document.activeElement === searchRef.current;
+
+      // Ctrl+P to open pinboard picker
+      if (e.key === "p" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (displayClips.length > 0 && displayClips[selectedIndex]) {
+          setShowPinboardPicker(true);
+        }
+        return;
+      }
 
       // / or Ctrl+F to focus search
       if (
@@ -144,7 +180,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [displayClips, pasteSelected, deleteSelected]);
+  }, [displayClips, selectedIndex, pasteSelected, deleteSelected]);
 
   // Scroll selected card into view
   useEffect(() => {
@@ -196,7 +232,7 @@ function App() {
         />
       )}
 
-      {/* Filmstrip content */}
+      {/* Tab content */}
       {activeTab === "history" ? (
         <Filmstrip
           clips={displayClips}
@@ -206,12 +242,40 @@ function App() {
           loading={displayLoading}
           containerRef={containerRef}
         />
+      ) : activeTab === "pinboards" ? (
+        <PinboardView
+          pinboards={pinboards}
+          onReload={reloadPinboards}
+          onCreatePinboard={createPinboard}
+          onUpdatePinboard={updatePinboard}
+          onDeletePinboard={deletePinboard}
+        />
       ) : (
         <div className="flex flex-1 items-center justify-center text-neutral-500">
-          {activeTab === "pinboards"
-            ? "Pinboards (coming soon)"
-            : "Snippets (coming soon)"}
+          Snippets (coming soon)
         </div>
+      )}
+
+      {/* Pinboard picker modal */}
+      {showPinboardPicker && (
+        <PinboardPicker
+          pinboards={pinboards}
+          onSelect={handlePinboardSelect}
+          onCreateNew={() => {
+            setShowPinboardPicker(false);
+            setShowCreatePinboard(true);
+          }}
+          onClose={() => setShowPinboardPicker(false)}
+        />
+      )}
+
+      {/* Create pinboard dialog (from picker) */}
+      {showCreatePinboard && (
+        <CreatePinboardDialog
+          title="Create Pinboard"
+          onSave={handleCreatePinboardFromPicker}
+          onClose={() => setShowCreatePinboard(false)}
+        />
       )}
 
       {/* Footer with keyboard hints */}
@@ -220,6 +284,7 @@ function App() {
         <span>Enter Paste</span>
         <span>/ Search</span>
         <span>Del Remove</span>
+        <span>Ctrl+P Pin</span>
         <span>Tab Switch view</span>
         <span>Esc Close</span>
       </div>
