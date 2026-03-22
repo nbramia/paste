@@ -449,6 +449,39 @@ fn import_espanso(
 }
 
 #[tauri::command]
+fn paste_clip_plain(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let clip = state.storage
+        .get_clip_by_id(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Clip not found: {}", id))?;
+
+    if let Some(ref text) = clip.text_content {
+        state.injector
+            .inject_text(text)
+            .map_err(|e| e.to_string())?;
+    }
+
+    state.storage
+        .increment_access_count(&id)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn toggle_favorite(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<bool, String> {
+    state.storage
+        .toggle_favorite(&id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_excluded_apps(
     state: tauri::State<'_, AppState>,
 ) -> Vec<String> {
@@ -559,6 +592,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_clips,
             paste_clip,
+            paste_clip_plain,
             delete_clip,
             search_clips,
             get_source_apps,
@@ -588,6 +622,7 @@ pub fn run() {
             expand_with_fill_ins,
             preview_espanso_import,
             import_espanso,
+            toggle_favorite,
             get_excluded_apps,
             add_excluded_app,
             remove_excluded_app,
