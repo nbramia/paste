@@ -7,7 +7,7 @@ mod storage;
 mod tray;
 
 use std::sync::Arc;
-use storage::{Storage, models::{Clip, ClipFilters}};
+use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard}};
 use injector::{select_injector, Injector};
 use config::AppConfig;
 
@@ -105,6 +105,58 @@ fn get_source_apps(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn list_pinboards(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<Pinboard>, String> {
+    state.storage.list_pinboards().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_pinboard(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    color: String,
+) -> Result<Pinboard, String> {
+    let new_pb = NewPinboard { name, color, icon: None };
+    state.storage.create_pinboard(&new_pb).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_pinboard(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    name: String,
+    color: String,
+) -> Result<Pinboard, String> {
+    state.storage.update_pinboard(&id, &name, &color, None).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_pinboard(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    state.storage.delete_pinboard(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn add_clip_to_pinboard(
+    state: tauri::State<'_, AppState>,
+    clip_id: String,
+    pinboard_id: String,
+) -> Result<(), String> {
+    state.storage.update_clip_pinboard(&clip_id, Some(&pinboard_id)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_clip_from_pinboard(
+    state: tauri::State<'_, AppState>,
+    clip_id: String,
+) -> Result<(), String> {
+    state.storage.update_clip_pinboard(&clip_id, None).map_err(|e| e.to_string())
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -134,6 +186,12 @@ pub fn run() {
             delete_clip,
             search_clips,
             get_source_apps,
+            list_pinboards,
+            create_pinboard,
+            update_pinboard,
+            delete_pinboard,
+            add_clip_to_pinboard,
+            remove_clip_from_pinboard,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
