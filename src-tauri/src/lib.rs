@@ -503,6 +503,34 @@ fn clear_all_history(
     state.storage.enforce_retention(None, Some(0)).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_config() -> Result<AppConfig, String> {
+    AppConfig::load().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn save_config(config: AppConfig) -> Result<(), String> {
+    let path = AppConfig::config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let toml_str = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    std::fs::write(&path, toml_str).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn reset_config() -> Result<AppConfig, String> {
+    let default = AppConfig::default();
+    let path = AppConfig::config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let toml_str = toml::to_string_pretty(&default).map_err(|e| e.to_string())?;
+    std::fs::write(&path, toml_str).map_err(|e| e.to_string())?;
+    Ok(default)
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -566,6 +594,9 @@ pub fn run() {
             get_storage_stats,
             run_retention,
             clear_all_history,
+            get_config,
+            save_config,
+            reset_config,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
