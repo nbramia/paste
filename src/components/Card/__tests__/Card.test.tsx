@@ -6,6 +6,7 @@ import { mockClips } from "../../../test/fixtures";
 const defaultProps = {
   index: 0,
   isSelected: false,
+  isMultiSelected: false,
   onSelect: () => {},
   onPaste: () => {},
 };

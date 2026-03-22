@@ -7,7 +7,8 @@ import { useAnimation } from "../../hooks/useAnimation";
 interface FilmstripProps {
   clips: ClipData[];
   selectedIndex: number;
-  onSelect: (index: number) => void;
+  multiSelectedIds: Set<string>;
+  onSelect: (index: number, event: React.MouseEvent) => void;
   onPaste: () => void;
   loading: boolean;
   containerRef: RefObject<HTMLDivElement | null>;
@@ -19,6 +20,7 @@ interface FilmstripProps {
 export function Filmstrip({
   clips,
   selectedIndex,
+  multiSelectedIds,
   onSelect,
   onPaste,
   loading,
@@ -97,7 +99,8 @@ export function Filmstrip({
               clip={clip}
               index={index}
               isSelected={index === selectedIndex}
-              onSelect={() => onSelect(index)}
+              isMultiSelected={multiSelectedIds.has(clip.id)}
+              onSelect={(e: React.MouseEvent) => onSelect(index, e)}
               onPaste={onPaste}
             />
           </motion.div>

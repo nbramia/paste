@@ -37,6 +37,7 @@ function App() {
   const { resolvedTheme: _resolvedTheme } = useTheme();
   const [clips, setClips] = useState<ClipData[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [multiSelectedIds, setMultiSelectedIds] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<TabView>("history");
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
@@ -183,6 +184,38 @@ function App() {
     setSelectedIndex(0);
   }, [clearSearch]);
 
+  const handleCardSelect = useCallback((index: number, event?: React.MouseEvent) => {
+    if (event?.ctrlKey || event?.metaKey) {
+      // Ctrl+click: toggle multi-selection
+      const clipId = displayClips[index]?.id;
+      if (clipId) {
+        setMultiSelectedIds(prev => {
+          const next = new Set(prev);
+          if (next.has(clipId)) {
+            next.delete(clipId);
+          } else {
+            next.add(clipId);
+          }
+          return next;
+        });
+      }
+    } else if (event?.shiftKey && multiSelectedIds.size > 0) {
+      // Shift+click: range selection from selectedIndex to clicked index
+      const start = Math.min(selectedIndex, index);
+      const end = Math.max(selectedIndex, index);
+      const newIds = new Set(multiSelectedIds);
+      for (let i = start; i <= end; i++) {
+        const clip = displayClips[i];
+        if (clip) newIds.add(clip.id);
+      }
+      setMultiSelectedIds(newIds);
+    } else {
+      // Normal click: clear multi-selection, set single selection
+      setMultiSelectedIds(new Set());
+      setSelectedIndex(index);
+    }
+  }, [displayClips, selectedIndex, multiSelectedIds]);
+
   const handlePinboardSelect = useCallback(async (pinboardId: string) => {
     const clip = displayClips[selectedIndex];
     if (!clip) return;
@@ -247,7 +280,9 @@ function App() {
           break;
         case "Escape":
           e.preventDefault();
-          if (showPreview) {
+          if (multiSelectedIds.size > 0) {
+            setMultiSelectedIds(new Set());
+          } else if (showPreview) {
             setShowPreview(false);
           } else if (isSearching) {
             handleClearSearch();
@@ -265,7 +300,18 @@ function App() {
           break;
         case "Enter":
           e.preventDefault();
-          if (e.shiftKey) {
+          if (multiSelectedIds.size > 0) {
+            // Multi-paste: concatenate text from selected clips in display order
+            const ids = displayClips
+              .filter(c => multiSelectedIds.has(c.id))
+              .map(c => c.id);
+            if (ids.length > 0) {
+              invoke("paste_clips_multi", { ids }).catch(err =>
+                console.error("Multi-paste failed:", err)
+              );
+              setMultiSelectedIds(new Set());
+            }
+          } else if (e.shiftKey) {
             pastePlainSelected();
           } else {
             pasteSelected();
@@ -295,7 +341,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [displayClips, selectedIndex, pasteSelected, pastePlainSelected, deleteSelected, toggleFavoriteSelected, showPreview, showEditor, isSearching, handleClearSearch]);
+  }, [displayClips, selectedIndex, multiSelectedIds, pasteSelected, pastePlainSelected, deleteSelected, toggleFavoriteSelected, showPreview, showEditor, isSearching, handleClearSearch]);
 
   // Close preview and editor when selection changes
   useEffect(() => {
@@ -358,9 +404,11 @@ function App() {
           )}
         </button>
         <span className="text-xs text-text-muted" aria-live="polite">
-          {displayClips.length > 0
-            ? `${displayClips.length} item${displayClips.length !== 1 ? "s" : ""}`
-            : ""}
+          {multiSelectedIds.size > 0
+            ? `${multiSelectedIds.size} selected`
+            : displayClips.length > 0
+              ? `${displayClips.length} item${displayClips.length !== 1 ? "s" : ""}`
+              : ""}
         </span>
       </div>
 
@@ -381,7 +429,8 @@ function App() {
         <Filmstrip
           clips={displayClips}
           selectedIndex={selectedIndex}
-          onSelect={setSelectedIndex}
+          multiSelectedIds={multiSelectedIds}
+          onSelect={handleCardSelect}
           onPaste={pasteSelected}
           loading={displayLoading}
           containerRef={containerRef}

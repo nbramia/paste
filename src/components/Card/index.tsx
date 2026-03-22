@@ -11,7 +11,8 @@ interface CardProps {
   clip: ClipData;
   index: number;
   isSelected: boolean;
-  onSelect: () => void;
+  isMultiSelected: boolean;
+  onSelect: (event: React.MouseEvent) => void;
   onPaste: () => void;
 }
 
@@ -79,6 +80,7 @@ function CardBase({
   clip,
   index,
   isSelected,
+  isMultiSelected,
   onSelect,
   onPaste,
 }: CardProps) {
@@ -90,6 +92,7 @@ function CardBase({
       role="button"
       tabIndex={isSelected ? 0 : -1}
       aria-label={getCardLabel(clip)}
+      aria-selected={isSelected || isMultiSelected}
       onClick={onSelect}
       onDoubleClick={onPaste}
       animate={{
@@ -101,12 +104,23 @@ function CardBase({
         damping: 25,
         mass: 0.8,
       }}
-      className={`flex w-48 shrink-0 cursor-pointer flex-col rounded-lg border transition-colors shadow-sm dark:shadow-none ${
-        isSelected
-          ? "border-blue-500 ring-2 ring-blue-500/30 bg-surface-hover"
-          : "border-border-default bg-surface-card hover:bg-surface-hover"
+      className={`relative flex w-48 shrink-0 cursor-pointer flex-col rounded-lg border transition-colors shadow-sm dark:shadow-none ${
+        isMultiSelected
+          ? "border-emerald-500 ring-2 ring-emerald-500/30 bg-surface-hover"
+          : isSelected
+            ? "border-blue-500 ring-2 ring-blue-500/30 bg-surface-hover"
+            : "border-border-default bg-surface-card hover:bg-surface-hover"
       }`}
     >
+      {/* Multi-select checkmark */}
+      {isMultiSelected && (
+        <div className="absolute top-2 right-2 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <path d="M20 6L9 17l-5-5" />
+          </svg>
+        </div>
+      )}
+
       {/* Content type indicator */}
       <div className={`h-1 rounded-t-lg ${typeColor}`} />
 
