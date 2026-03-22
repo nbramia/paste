@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import type { ClipData } from "../../App";
 import { TextCard } from "./TextCard";
 import { CodeCard } from "./CodeCard";
@@ -72,11 +73,20 @@ export function Card({
   const typeColor = typeColors[clip.content_type] || "bg-neutral-500";
 
   return (
-    <div
+    <motion.div
       data-index={index}
       onClick={onSelect}
       onDoubleClick={onPaste}
-      className={`flex w-48 shrink-0 cursor-pointer flex-col rounded-lg border transition-all shadow-sm dark:shadow-none ${
+      animate={{
+        scale: isSelected ? 1.03 : 1,
+      }}
+      transition={{
+        type: "spring",
+        stiffness: 400,
+        damping: 25,
+        mass: 0.8,
+      }}
+      className={`flex w-48 shrink-0 cursor-pointer flex-col rounded-lg border transition-colors shadow-sm dark:shadow-none ${
         isSelected
           ? "border-blue-500 ring-2 ring-blue-500/30 bg-surface-hover"
           : "border-border-default bg-surface-card hover:bg-surface-hover"
@@ -97,6 +107,6 @@ export function Card({
           {formatRelativeTime(clip.created_at)}
         </span>
       </div>
-    </div>
+    </motion.div>
   );
 }

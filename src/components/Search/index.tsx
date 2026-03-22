@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 
 interface SearchProps {
@@ -134,67 +135,77 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
       </div>
 
       {/* Power Search filters */}
-      {showPowerSearch && (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {/* Content type */}
-          <select
-            value={filters.contentType || ""}
-            onChange={(e) =>
-              handleFilterChange({ ...filters, contentType: e.target.value || null })
-            }
-            className="rounded bg-surface-secondary px-2 py-1 text-xs text-text-secondary outline-none"
+      <AnimatePresence>
+        {showPowerSearch && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="overflow-hidden"
           >
-            <option value="">All types</option>
-            <option value="text">Text</option>
-            <option value="code">Code</option>
-            <option value="link">Link</option>
-            <option value="image">Image</option>
-            <option value="file">File</option>
-          </select>
-
-          {/* Source app */}
-          <select
-            value={filters.sourceApp || ""}
-            onChange={(e) =>
-              handleFilterChange({ ...filters, sourceApp: e.target.value || null })
-            }
-            className="rounded bg-surface-secondary px-2 py-1 text-xs text-text-secondary outline-none"
-          >
-            <option value="">All apps</option>
-            {sourceApps.map((app) => (
-              <option key={app} value={app}>
-                {app}
-              </option>
-            ))}
-          </select>
-
-          {/* Date range */}
-          <div className="flex gap-1">
-            {[
-              { label: "Today", value: "today" },
-              { label: "7d", value: "7d" },
-              { label: "30d", value: "30d" },
-            ].map(({ label, value }) => (
-              <button
-                key={value}
-                onClick={() =>
-                  handleFilterChange({
-                    ...filters,
-                    dateRange: filters.dateRange === value ? null : value,
-                  })
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {/* Content type */}
+              <select
+                value={filters.contentType || ""}
+                onChange={(e) =>
+                  handleFilterChange({ ...filters, contentType: e.target.value || null })
                 }
-                className={`rounded px-2 py-0.5 text-xs transition-colors ${
-                  filters.dateRange === value
-                    ? "bg-blue-600 text-white"
-                    : "bg-surface-secondary text-text-muted hover:text-text-secondary"
-                }`}
+                className="rounded bg-surface-secondary px-2 py-1 text-xs text-text-secondary outline-none"
               >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+                <option value="">All types</option>
+                <option value="text">Text</option>
+                <option value="code">Code</option>
+                <option value="link">Link</option>
+                <option value="image">Image</option>
+                <option value="file">File</option>
+              </select>
+
+              {/* Source app */}
+              <select
+                value={filters.sourceApp || ""}
+                onChange={(e) =>
+                  handleFilterChange({ ...filters, sourceApp: e.target.value || null })
+                }
+                className="rounded bg-surface-secondary px-2 py-1 text-xs text-text-secondary outline-none"
+              >
+                <option value="">All apps</option>
+                {sourceApps.map((app) => (
+                  <option key={app} value={app}>
+                    {app}
+                  </option>
+                ))}
+              </select>
+
+              {/* Date range */}
+              <div className="flex gap-1">
+                {[
+                  { label: "Today", value: "today" },
+                  { label: "7d", value: "7d" },
+                  { label: "30d", value: "30d" },
+                ].map(({ label, value }) => (
+                  <button
+                    key={value}
+                    onClick={() =>
+                      handleFilterChange({
+                        ...filters,
+                        dateRange: filters.dateRange === value ? null : value,
+                      })
+                    }
+                    className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                      filters.dateRange === value
+                        ? "bg-blue-600 text-white"
+                        : "bg-surface-secondary text-text-muted hover:text-text-secondary"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
