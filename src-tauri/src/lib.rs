@@ -453,6 +453,17 @@ fn import_espanso(
 }
 
 #[tauri::command]
+fn update_clip_content(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    content: String,
+) -> Result<(), String> {
+    state.storage
+        .update_clip_content(&id, &content)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn paste_clip_plain(
     state: tauri::State<'_, AppState>,
     id: String,
@@ -597,6 +608,7 @@ pub fn run() {
             get_clips,
             paste_clip,
             paste_clip_plain,
+            update_clip_content,
             delete_clip,
             search_clips,
             get_source_apps,

@@ -11,6 +11,7 @@ import { PinboardView, PinboardPicker, CreatePinboardDialog } from "./components
 import { useSnippets } from "./hooks/useSnippets";
 import { SnippetView } from "./components/Snippet";
 import { CardPreview } from "./components/Card/CardPreview";
+import { ClipEditor } from "./components/Card/ClipEditor";
 
 export interface ClipData {
   id: string;
@@ -71,6 +72,7 @@ function App() {
   const [pasteStackActive, setPasteStackActive] = useState(false);
   const [pasteStackCount, setPasteStackCount] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
+  const [showEditor, setShowEditor] = useState(false);
 
   // The clips to display: search results when searching, all clips otherwise
   const displayClips = isSearching ? results : clips;
@@ -198,6 +200,16 @@ function App() {
       // Check if search input is focused
       const isSearchFocused = document.activeElement === searchRef.current;
 
+      // Ctrl+E to edit selected clip
+      if (e.key === "e" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        const clip = displayClips[selectedIndex];
+        if (clip && (clip.content_type === "text" || clip.content_type === "code")) {
+          setShowEditor(true);
+        }
+        return;
+      }
+
       // Ctrl+P to open pinboard picker
       if (e.key === "p" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -277,11 +289,12 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [displayClips, selectedIndex, pasteSelected, pastePlainSelected, deleteSelected, toggleFavoriteSelected, showPreview, isSearching, handleClearSearch]);
+  }, [displayClips, selectedIndex, pasteSelected, pastePlainSelected, deleteSelected, toggleFavoriteSelected, showPreview, showEditor, isSearching, handleClearSearch]);
 
-  // Close preview when selection changes
+  // Close preview and editor when selection changes
   useEffect(() => {
     setShowPreview(false);
+    setShowEditor(false);
   }, [selectedIndex]);
 
   // Scroll selected card into view
@@ -422,6 +435,17 @@ function App() {
         )}
       </AnimatePresence>
 
+      {/* Clip editor modal */}
+      <AnimatePresence>
+        {showEditor && displayClips[selectedIndex] && (
+          <ClipEditor
+            clip={displayClips[selectedIndex]}
+            onSave={loadClips}
+            onClose={() => setShowEditor(false)}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Footer with keyboard hints */}
       <div className="flex items-center gap-4 border-t border-border-default px-4 py-1.5 text-xs text-text-muted">
         <span>←→ Navigate</span>
@@ -430,6 +454,7 @@ function App() {
         <span>Space Preview</span>
         <span>F Fav</span>
         <span>/ Search</span>
+        <span>⌃E Edit</span>
         <span>⌃P Pin</span>
         <span>Del Remove</span>
         <span>Tab Views</span>
