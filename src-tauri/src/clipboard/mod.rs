@@ -1,6 +1,7 @@
 //! Clipboard monitoring for X11 (XFixes) and Wayland (wl-paste).
 
 pub mod detection;
+pub mod stack;
 pub mod types;
 pub mod wayland;
 #[cfg(target_os = "linux")]

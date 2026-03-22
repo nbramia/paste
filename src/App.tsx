@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Filmstrip } from "./components/Filmstrip";
+import { PasteStackView } from "./components/Filmstrip/PasteStackView";
 import { Search, type SearchFilters } from "./components/Search";
 import { useSearch } from "./hooks/useSearch";
 import { usePinboards } from "./hooks/usePinboards";
@@ -46,6 +47,9 @@ function App() {
   } = usePinboards();
   const [showPinboardPicker, setShowPinboardPicker] = useState(false);
   const [showCreatePinboard, setShowCreatePinboard] = useState(false);
+  const [showPasteStack, setShowPasteStack] = useState(false);
+  const [pasteStackActive, setPasteStackActive] = useState(false);
+  const [pasteStackCount, setPasteStackCount] = useState(0);
 
   // The clips to display: search results when searching, all clips otherwise
   const displayClips = isSearching ? results : clips;
@@ -119,6 +123,11 @@ function App() {
     await createPinboard(name, color);
     setShowCreatePinboard(false);
   }, [createPinboard]);
+
+  const handlePasteStackStatusChange = useCallback((active: boolean, count: number) => {
+    setPasteStackActive(active);
+    setPasteStackCount(count);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -205,9 +214,12 @@ function App() {
         {(["history", "pinboards", "snippets"] as TabView[]).map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => {
+              setActiveTab(tab);
+              setShowPasteStack(false);
+            }}
             className={`rounded-md px-3 py-1 text-sm font-medium capitalize transition-colors ${
-              activeTab === tab
+              activeTab === tab && !showPasteStack
                 ? "bg-neutral-700 text-white"
                 : "text-neutral-400 hover:text-neutral-200"
             }`}
@@ -216,6 +228,21 @@ function App() {
           </button>
         ))}
         <div className="flex-1" />
+        <button
+          onClick={() => setShowPasteStack((prev) => !prev)}
+          className={`relative rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+            showPasteStack
+              ? "bg-neutral-700 text-white"
+              : "text-neutral-400 hover:text-neutral-200"
+          }`}
+        >
+          Stack
+          {pasteStackActive && (
+            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-green-600 px-1 text-[10px] font-bold text-white">
+              {pasteStackCount}
+            </span>
+          )}
+        </button>
         <span className="text-xs text-neutral-500">
           {displayClips.length > 0
             ? `${displayClips.length} item${displayClips.length !== 1 ? "s" : ""}`
@@ -233,7 +260,9 @@ function App() {
       )}
 
       {/* Tab content */}
-      {activeTab === "history" ? (
+      {showPasteStack ? (
+        <PasteStackView onStatusChange={handlePasteStackStatusChange} />
+      ) : activeTab === "history" ? (
         <Filmstrip
           clips={displayClips}
           selectedIndex={selectedIndex}
