@@ -1,4 +1,9 @@
 import type { ClipData } from "../../App";
+import { TextCard } from "./TextCard";
+import { CodeCard } from "./CodeCard";
+import { LinkCard } from "./LinkCard";
+import { ImageCard } from "./ImageCard";
+import { FileCard } from "./FileCard";
 
 interface CardProps {
   clip: ClipData;
@@ -32,20 +37,29 @@ function formatRelativeTime(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString();
 }
 
-function truncateText(
-  text: string,
-  maxLines: number,
-  maxChars: number,
-): string {
-  const lines = text.split("\n").slice(0, maxLines);
-  const truncated = lines.join("\n");
-  if (truncated.length > maxChars) {
-    return truncated.slice(0, maxChars) + "\u2026";
+function CardContent({ clip }: { clip: ClipData }) {
+  switch (clip.content_type) {
+    case "code":
+      return (
+        <CodeCard text={clip.text_content || ""} metadata={clip.metadata} />
+      );
+    case "link":
+      return (
+        <LinkCard text={clip.text_content || ""} metadata={clip.metadata} />
+      );
+    case "image":
+      return (
+        <ImageCard
+          imagePath={clip.image_path}
+          metadata={clip.metadata}
+        />
+      );
+    case "file":
+      return <FileCard text={clip.text_content || ""} />;
+    case "text":
+    default:
+      return <TextCard text={clip.text_content || ""} />;
   }
-  if (text.split("\n").length > maxLines) {
-    return truncated + "\u2026";
-  }
-  return truncated;
 }
 
 export function Card({
@@ -55,12 +69,6 @@ export function Card({
   onSelect,
   onPaste,
 }: CardProps) {
-  const preview = clip.text_content
-    ? truncateText(clip.text_content, 6, 200)
-    : clip.image_path
-      ? "[Image]"
-      : "[Empty]";
-
   const typeColor = typeColors[clip.content_type] || "bg-neutral-500";
 
   return (
@@ -77,12 +85,8 @@ export function Card({
       {/* Content type indicator */}
       <div className={`h-1 rounded-t-lg ${typeColor}`} />
 
-      {/* Preview */}
-      <div className="flex-1 overflow-hidden px-3 py-2">
-        <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-neutral-300">
-          {preview}
-        </pre>
-      </div>
+      {/* Content preview — dispatched by type */}
+      <CardContent clip={clip} />
 
       {/* Footer */}
       <div className="flex items-center gap-2 border-t border-neutral-700/50 px-3 py-1.5">
