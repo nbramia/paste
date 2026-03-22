@@ -12,6 +12,7 @@ export interface SearchFilters {
   contentType: string | null;
   sourceApp: string | null;
   dateRange: string | null; // "today" | "7d" | "30d" | null
+  isFavorite: boolean;
 }
 
 export function Search({ onSearch, onClear, searchRef }: SearchProps) {
@@ -21,6 +22,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
     contentType: null,
     sourceApp: null,
     dateRange: null,
+    isFavorite: false,
   });
   const [sourceApps, setSourceApps] = useState<string[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -39,7 +41,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
     (q: string, f: SearchFilters) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        if (q.trim() || f.contentType || f.sourceApp || f.dateRange) {
+        if (q.trim() || f.contentType || f.sourceApp || f.dateRange || f.isFavorite) {
           onSearch(q, f);
         } else {
           onClear();
@@ -61,7 +63,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
 
   const handleClear = () => {
     setQuery("");
-    setFilters({ contentType: null, sourceApp: null, dateRange: null });
+    setFilters({ contentType: null, sourceApp: null, dateRange: null, isFavorite: false });
     setShowPowerSearch(false);
     onClear();
   };
@@ -70,7 +72,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
     if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
-      if (query || filters.contentType || filters.sourceApp || filters.dateRange) {
+      if (query || filters.contentType || filters.sourceApp || filters.dateRange || filters.isFavorite) {
         handleClear();
       } else {
         (e.target as HTMLInputElement).blur();
@@ -125,7 +127,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
         </button>
 
         {/* Clear button */}
-        {(query || filters.contentType || filters.sourceApp || filters.dateRange) && (
+        {(query || filters.contentType || filters.sourceApp || filters.dateRange || filters.isFavorite) && (
           <button
             onClick={handleClear}
             className="text-text-muted hover:text-text-primary"
@@ -206,6 +208,20 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
                   </button>
                 ))}
               </div>
+
+              {/* Favorites filter */}
+              <button
+                onClick={() =>
+                  handleFilterChange({ ...filters, isFavorite: !filters.isFavorite })
+                }
+                className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                  filters.isFavorite
+                    ? "bg-yellow-600 text-white"
+                    : "bg-surface-secondary text-text-muted hover:text-text-primary"
+                }`}
+              >
+                ★ Favorites
+              </button>
             </div>
           </motion.div>
         )}
