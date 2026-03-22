@@ -8,7 +8,7 @@ mod tray;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup}};
+use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup, StorageStats}};
 use injector::{select_injector, Injector};
 use config::AppConfig;
 use clipboard::stack::PasteStack;
@@ -479,6 +479,30 @@ fn remove_excluded_app(
     apps.clone()
 }
 
+#[tauri::command]
+fn get_storage_stats(
+    state: tauri::State<'_, AppState>,
+) -> Result<StorageStats, String> {
+    state.storage.get_storage_stats().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn run_retention(
+    state: tauri::State<'_, AppState>,
+) -> Result<usize, String> {
+    let max_days = Some(90u32);
+    let max_count = Some(10000usize);
+    state.storage.enforce_retention(max_days, max_count).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn clear_all_history(
+    state: tauri::State<'_, AppState>,
+) -> Result<usize, String> {
+    // Delete all non-pinboard, non-favorite clips
+    state.storage.enforce_retention(None, Some(0)).map_err(|e| e.to_string())
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -539,9 +563,40 @@ pub fn run() {
             get_excluded_apps,
             add_excluded_app,
             remove_excluded_app,
+            get_storage_stats,
+            run_retention,
+            clear_all_history,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
+
+            // Run retention on startup and schedule periodic runs
+            let app_handle = app.handle().clone();
+            std::thread::Builder::new()
+                .name("retention-scheduler".into())
+                .spawn(move || {
+                    // Initial run on startup (small delay to let app settle)
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+
+                    loop {
+                        // Get storage from app state
+                        if let Some(state) = app_handle.try_state::<AppState>() {
+                            match state.storage.enforce_retention(Some(90), Some(10000)) {
+                                Ok(deleted) => {
+                                    if deleted > 0 {
+                                        log::info!("Retention: deleted {deleted} clips");
+                                    }
+                                }
+                                Err(e) => log::error!("Retention failed: {e}"),
+                            }
+                        }
+
+                        // Sleep for 1 hour
+                        std::thread::sleep(std::time::Duration::from_secs(3600));
+                    }
+                })
+                .ok();
+
             Ok(())
         })
         .run(tauri::generate_context!())

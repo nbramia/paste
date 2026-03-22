@@ -1,4 +1,5 @@
 import { ExclusionList } from "./ExclusionList";
+import { RetentionSettings } from "./RetentionSettings";
 
 export function Settings() {
   return (
@@ -6,11 +7,15 @@ export function Settings() {
       <h2 className="mb-4 text-sm font-medium text-text-secondary">Settings</h2>
 
       <div className="max-w-md space-y-6">
-        <ExclusionList />
+        <RetentionSettings />
+
+        <div className="border-t border-border-default pt-4">
+          <ExclusionList />
+        </div>
 
         <div className="border-t border-border-default pt-4">
           <p className="text-xs text-text-faint">
-            More settings coming soon (hotkeys, storage, UI theme, text expander).
+            More settings coming soon (hotkeys, UI theme, text expander).
           </p>
         </div>
       </div>

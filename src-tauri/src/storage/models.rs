@@ -123,3 +123,14 @@ pub struct PasteStackItem {
     pub position: i64,
     pub created_at: String,
 }
+
+/// Storage statistics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageStats {
+    pub total_clips: usize,
+    pub pinboard_clips: usize,
+    pub favorite_clips: usize,
+    pub total_size_bytes: i64,
+    pub oldest_clip_date: Option<String>,
+    pub newest_clip_date: Option<String>,
+}

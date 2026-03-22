@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::db::Storage;
 use super::error::StorageError;
-use super::models::{Clip, ClipFilters, NewClip};
+use super::models::{Clip, ClipFilters, NewClip, StorageStats};
 
 impl Storage {
     /// Insert a new clip into the database.
@@ -213,6 +213,56 @@ impl Storage {
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(apps)
+    }
+
+    /// Get storage statistics.
+    pub fn get_storage_stats(&self) -> Result<StorageStats, StorageError> {
+        let conn = self.conn.lock().unwrap();
+
+        let total_clips: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM clips",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let total_pinboard: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM clips WHERE pinboard_id IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let total_favorites: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM clips WHERE is_favorite = TRUE",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let total_size: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(content_size), 0) FROM clips",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let oldest_clip: Option<String> = conn.query_row(
+            "SELECT MIN(created_at) FROM clips",
+            [],
+            |row| row.get(0),
+        ).ok();
+
+        let newest_clip: Option<String> = conn.query_row(
+            "SELECT MAX(created_at) FROM clips",
+            [],
+            |row| row.get(0),
+        ).ok();
+
+        Ok(StorageStats {
+            total_clips: total_clips as usize,
+            pinboard_clips: total_pinboard as usize,
+            favorite_clips: total_favorites as usize,
+            total_size_bytes: total_size,
+            oldest_clip_date: oldest_clip,
+            newest_clip_date: newest_clip,
+        })
     }
 
     /// Get the content hash of the most recently created clip.
