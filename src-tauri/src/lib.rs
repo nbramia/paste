@@ -16,6 +16,7 @@ use config::AppConfig;
 use clipboard::stack::PasteStack;
 use expander::template::{FillInField, parse_template, extract_fill_in_fields, evaluate_tokens, ExpansionContext};
 use expander::import::{ImportedSnippet, ImportResult, parse_espanso_dir, default_espanso_path};
+use expander::export::{build_export, parse_import, has_script_snippets, JsonImportResult};
 
 /// Shared application state managed by Tauri.
 pub struct AppState {
@@ -477,6 +478,83 @@ fn import_espanso(
 }
 
 #[tauri::command]
+fn export_snippets(
+    state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+    let snippets = state.storage.list_snippets(None).map_err(|e| e.to_string())?;
+    let groups = state.storage.list_snippet_groups().map_err(|e| e.to_string())?;
+    let export = build_export(&snippets, &groups);
+    serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_snippets_json(
+    state: tauri::State<'_, AppState>,
+    json: String,
+) -> Result<JsonImportResult, String> {
+    let export = parse_import(&json)?;
+    let has_scripts = has_script_snippets(&export);
+
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    let mut errors = Vec::new();
+
+    for group in &export.groups {
+        // Create or find the group (skip "Ungrouped")
+        let group_id = if group.name != "Ungrouped" {
+            match state.storage.create_snippet_group(&NewSnippetGroup { name: group.name.clone() }) {
+                Ok(g) => Some(g.id),
+                Err(_) => {
+                    // Group might already exist -- find it
+                    state.storage.list_snippet_groups()
+                        .ok()
+                        .and_then(|groups| groups.into_iter().find(|g| g.name == group.name))
+                        .map(|g| g.id)
+                }
+            }
+        } else {
+            None
+        };
+
+        for snippet in &group.snippets {
+            // Check for duplicate abbreviation
+            match state.storage.get_snippet_by_abbreviation(&snippet.abbreviation) {
+                Ok(Some(_)) => {
+                    skipped += 1;
+                    continue;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    errors.push(format!("Error checking '{}': {e}", snippet.abbreviation));
+                    continue;
+                }
+            }
+
+            let new_snippet = NewSnippet {
+                abbreviation: snippet.abbreviation.clone(),
+                name: snippet.name.clone(),
+                content: snippet.content.clone(),
+                content_type: snippet.content_type.clone(),
+                group_id: group_id.clone(),
+                description: snippet.description.clone(),
+            };
+
+            match state.storage.create_snippet(&new_snippet) {
+                Ok(_) => imported += 1,
+                Err(e) => errors.push(format!("Failed to import '{}': {e}", snippet.abbreviation)),
+            }
+        }
+    }
+
+    Ok(JsonImportResult {
+        imported,
+        skipped,
+        errors,
+        has_scripts,
+    })
+}
+
+#[tauri::command]
 fn update_clip_content(
     state: tauri::State<'_, AppState>,
     id: String,
@@ -677,6 +755,8 @@ pub fn run() {
             expand_with_fill_ins,
             preview_espanso_import,
             import_espanso,
+            export_snippets,
+            import_snippets_json,
             toggle_favorite,
             get_excluded_apps,
             add_excluded_app,

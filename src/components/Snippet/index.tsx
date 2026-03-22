@@ -68,6 +68,57 @@ export function SnippetView({
     }
   };
 
+  const handleExportJson = async () => {
+    try {
+      const json = await invoke<string>("export_snippets");
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "paste-snippets.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      setImportMessage("Snippets exported");
+      setTimeout(() => setImportMessage(null), 3000);
+    } catch (err) {
+      setImportMessage(`Export failed: ${err}`);
+      setTimeout(() => setImportMessage(null), 5000);
+    }
+  };
+
+  const handleImportJson = async () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const result = await invoke<{
+          imported: number;
+          skipped: number;
+          errors: string[];
+          has_scripts: boolean;
+        }>("import_snippets_json", { json: text });
+
+        const parts = [];
+        if (result.imported > 0) parts.push(`${result.imported} imported`);
+        if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
+        if (result.errors.length > 0) parts.push(`${result.errors.length} errors`);
+        if (result.has_scripts) parts.push("contains shell scripts");
+        setImportMessage(parts.join(", ") || "No snippets found");
+
+        if (result.imported > 0) await onReload();
+        setTimeout(() => setImportMessage(null), 5000);
+      } catch (err) {
+        setImportMessage(`Import failed: ${err}`);
+        setTimeout(() => setImportMessage(null), 5000);
+      }
+    };
+    input.click();
+  };
+
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center text-text-muted">
@@ -129,6 +180,20 @@ export function SnippetView({
           Snippets ({snippets.length})
         </h2>
         <div className="flex gap-2">
+          <button
+            onClick={handleExportJson}
+            className="rounded px-2 py-1 text-xs text-text-muted hover:text-text-primary"
+            title="Export all snippets as JSON"
+          >
+            Export
+          </button>
+          <button
+            onClick={handleImportJson}
+            className="rounded px-2 py-1 text-xs text-text-muted hover:text-text-primary"
+            title="Import snippets from JSON file"
+          >
+            Import JSON
+          </button>
           <button
             onClick={handleImportEspanso}
             className="rounded px-2 py-1 text-xs text-text-muted hover:text-text-primary"
