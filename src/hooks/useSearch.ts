@@ -51,6 +51,7 @@ export function useSearch() {
           dateFrom: from,
           dateTo: to,
           pinboardId: null,
+          isFavorite: filters.isFavorite || null,
         });
         setResults(result);
       } else {
@@ -60,6 +61,7 @@ export function useSearch() {
           limit: 50,
           contentType: filters.contentType,
           sourceApp: filters.sourceApp,
+          isFavorite: filters.isFavorite || null,
         });
         setResults(result);
       }

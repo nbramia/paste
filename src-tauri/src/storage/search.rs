@@ -55,6 +55,10 @@ impl Storage {
             sql.push_str(" AND c.pinboard_id = ?");
             param_values.push(Box::new(pid.clone()));
         }
+        if let Some(fav) = filters.is_favorite {
+            sql.push_str(" AND c.is_favorite = ?");
+            param_values.push(Box::new(fav));
+        }
 
         sql.push_str(" ORDER BY rank");
 

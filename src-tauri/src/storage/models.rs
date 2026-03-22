@@ -42,6 +42,7 @@ pub struct ClipFilters {
     pub date_from: Option<String>,
     pub date_to: Option<String>,
     pub pinboard_id: Option<String>,
+    pub is_favorite: Option<bool>,
 }
 
 /// Represents a pinboard (named collection).

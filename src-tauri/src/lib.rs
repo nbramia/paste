@@ -34,6 +34,7 @@ fn get_clips(
     content_type: Option<String>,
     source_app: Option<String>,
     pinboard_id: Option<String>,
+    is_favorite: Option<bool>,
 ) -> Result<Vec<Clip>, String> {
     let start = Instant::now();
     let filters = ClipFilters {
@@ -42,6 +43,7 @@ fn get_clips(
         date_from: None,
         date_to: None,
         pinboard_id,
+        is_favorite,
     };
     let result = state.storage
         .get_clips(offset, limit, &filters)
@@ -109,6 +111,7 @@ fn search_clips(
     date_from: Option<String>,
     date_to: Option<String>,
     pinboard_id: Option<String>,
+    is_favorite: Option<bool>,
 ) -> Result<Vec<Clip>, String> {
     let start = Instant::now();
     let filters = ClipFilters {
@@ -117,6 +120,7 @@ fn search_clips(
         date_from,
         date_to,
         pinboard_id,
+        is_favorite,
     };
     let result = state.storage
         .search_clips(&query, &filters)
