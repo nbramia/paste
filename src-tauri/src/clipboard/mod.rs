@@ -1,5 +1,6 @@
 //! Clipboard monitoring for X11 (XFixes) and Wayland (wl-paste).
 
+pub mod dedup;
 pub mod detection;
 pub mod stack;
 pub mod types;
