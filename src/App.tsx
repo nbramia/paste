@@ -437,6 +437,7 @@ function App() {
           onLoadMore={isSearching ? undefined : loadMoreClips}
           hasMore={isSearching ? false : hasMore}
           loadingMore={isSearching ? false : loadingMore}
+          onClipCreated={loadClips}
         />
       ) : activeTab === "pinboards" ? (
         <PinboardView

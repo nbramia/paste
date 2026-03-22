@@ -54,6 +54,12 @@
   }
 }
 
+/* Drag feedback */
+[draggable]:active {
+  opacity: 0.7;
+  cursor: grabbing;
+}
+
 /* Base styles */
 html {
   color-scheme: light dark;

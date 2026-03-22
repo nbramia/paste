@@ -11,9 +11,10 @@ mod tray;
 use std::collections::HashMap;
 use std::time::Instant;
 use std::sync::{Arc, Mutex};
-use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup, StorageStats}};
+use storage::{Storage, models::{Clip, ClipFilters, NewClip, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup, StorageStats}};
 use injector::{select_injector, Injector, RichContent};
 use config::AppConfig;
+use clipboard::detection::{compute_hash, detect_text_content_type};
 use clipboard::stack::PasteStack;
 use expander::template::{FillInField, parse_template, extract_fill_in_fields, evaluate_tokens, ExpansionContext};
 use expander::import::{ImportedSnippet, ImportResult, parse_espanso_dir, default_espanso_path};
@@ -726,6 +727,32 @@ fn reset_config() -> Result<AppConfig, String> {
 }
 
 #[tauri::command]
+fn create_clip_from_text(
+    state: tauri::State<'_, AppState>,
+    text: String,
+    content_type: Option<String>,
+) -> Result<Clip, String> {
+    let hash = compute_hash(text.as_bytes());
+    let detected_type = content_type.unwrap_or_else(|| {
+        detect_text_content_type(&text).as_str().to_string()
+    });
+
+    let new_clip = NewClip {
+        content_type: detected_type,
+        text_content: Some(text.clone()),
+        html_content: None,
+        image_path: None,
+        source_app: Some("Paste (drop)".to_string()),
+        source_app_icon: None,
+        content_hash: hash,
+        content_size: text.len() as i64,
+        metadata: None,
+    };
+
+    state.storage.insert_clip(&new_clip).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_autostart_status() -> Result<bool, String> {
     Ok(service::is_service_installed())
 }
@@ -840,6 +867,7 @@ pub fn run() {
             get_autostart_status,
             install_autostart,
             uninstall_autostart,
+            create_clip_from_text,
         ])
         .setup(|app| {
             if let Err(e) = tray::setup_tray(app.handle()) {
