@@ -3,6 +3,7 @@ mod config;
 mod expander;
 mod hotkey;
 mod injector;
+mod logging;
 mod service;
 mod storage;
 mod tray;
@@ -740,19 +741,42 @@ fn uninstall_autostart() -> Result<String, String> {
 }
 
 pub fn run() {
+    // Initialize logging first — all subsequent log calls go to stderr + file
+    logging::init_logging();
+
+    log::info!("=== Paste starting ===");
+
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
-        eprintln!("Warning: Failed to load config: {}. Using defaults.", e);
+        log::warn!("Failed to load config: {e}. Using defaults.");
         AppConfig::default()
     });
 
-    // Initialize storage
-    let storage = Storage::new(Some(config.resolved_db_path()))
-        .expect("Failed to initialize storage");
+    // Initialize storage with fallback to in-memory on failure
+    let storage = match Storage::new(Some(config.resolved_db_path())) {
+        Ok(s) => {
+            log::info!("Storage initialized at {}", config.resolved_db_path().display());
+            s
+        }
+        Err(e) => {
+            log::error!("Failed to initialize storage: {e}");
+            log::info!("Attempting fallback with in-memory storage");
+            Storage::new_in_memory().expect("Failed to create even in-memory storage")
+        }
+    };
 
-    // Initialize injector
-    let injector = select_injector(&config.injection.method)
-        .expect("Failed to initialize text injector");
+    // Initialize injector with fallback to clipboard on failure
+    let injector = match select_injector(&config.injection.method) {
+        Ok(i) => {
+            log::info!("Text injector initialized: {}", i.name());
+            i
+        }
+        Err(e) => {
+            log::error!("Failed to initialize injector ({}): {e}", config.injection.method);
+            log::info!("Falling back to clipboard injector");
+            select_injector("clipboard").expect("Failed to create clipboard injector")
+        }
+    };
 
     let app_state = AppState {
         storage,
@@ -760,6 +784,8 @@ pub fn run() {
         paste_stack: PasteStack::new(),
         excluded_apps: Mutex::new(config.clipboard.excluded_apps.clone()),
     };
+
+    log::info!("App state initialized");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -816,7 +842,10 @@ pub fn run() {
             uninstall_autostart,
         ])
         .setup(|app| {
-            tray::setup_tray(app.handle())?;
+            if let Err(e) = tray::setup_tray(app.handle()) {
+                log::error!("Failed to setup tray: {e}");
+                // Continue without tray — not fatal
+            }
 
             // Run retention on startup and schedule periodic runs
             let app_handle = app.handle().clone();
@@ -845,8 +874,13 @@ pub fn run() {
                 })
                 .ok();
 
+            log::info!("App setup complete");
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running paste");
+        .unwrap_or_else(|e| {
+            log::error!("Fatal: Tauri runtime error: {e}");
+            eprintln!("Fatal error: {e}");
+            std::process::exit(1);
+        });
 }
