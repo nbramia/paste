@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicco-b/tauri/dev/crates/tauri-cli/config.schema.json",
+  "productName": "Paste",
+  "version": "0.1.0",
+  "identifier": "tech.paste.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Paste",
+        "width": 1200,
+        "height": 400,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png"
+    ]
+  }
+}
