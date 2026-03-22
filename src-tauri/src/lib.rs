@@ -102,6 +102,10 @@ pub fn run() {
             paste_clip,
             delete_clip,
         ])
+        .setup(|app| {
+            tray::setup_tray(app.handle())?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running paste");
 }
