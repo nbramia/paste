@@ -1,4 +1,9 @@
 //! Text expander engine — abbreviation monitoring and snippet expansion.
 
-#[allow(dead_code)]
-pub struct ExpanderEngine;
+pub mod buffer;
+pub mod engine;
+pub mod keymap;
+pub mod matcher;
+pub mod template;
+
+pub use engine::ExpanderEngine;
