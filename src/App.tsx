@@ -5,6 +5,7 @@ import { PasteStackView } from "./components/Filmstrip/PasteStackView";
 import { Search, type SearchFilters } from "./components/Search";
 import { useSearch } from "./hooks/useSearch";
 import { usePinboards } from "./hooks/usePinboards";
+import { useTheme } from "./hooks/useTheme";
 import { PinboardView, PinboardPicker, CreatePinboardDialog } from "./components/Pinboard";
 
 export interface ClipData {
@@ -28,6 +29,7 @@ export interface ClipData {
 type TabView = "history" | "pinboards" | "snippets";
 
 function App() {
+  const { resolvedTheme: _resolvedTheme } = useTheme();
   const [clips, setClips] = useState<ClipData[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<TabView>("history");
@@ -208,9 +210,9 @@ function App() {
   }, [selectedIndex]);
 
   return (
-    <div className="flex h-screen flex-col bg-neutral-900 text-white select-none">
+    <div className="flex h-screen flex-col bg-surface-bg text-text-primary select-none">
       {/* Tab bar */}
-      <div className="flex items-center gap-1 border-b border-neutral-700 px-4 py-2">
+      <div className="flex items-center gap-1 border-b border-border-default px-4 py-2">
         {(["history", "pinboards", "snippets"] as TabView[]).map((tab) => (
           <button
             key={tab}
@@ -220,8 +222,8 @@ function App() {
             }}
             className={`rounded-md px-3 py-1 text-sm font-medium capitalize transition-colors ${
               activeTab === tab && !showPasteStack
-                ? "bg-neutral-700 text-white"
-                : "text-neutral-400 hover:text-neutral-200"
+                ? "bg-surface-hover text-text-primary"
+                : "text-text-muted hover:text-text-secondary"
             }`}
           >
             {tab}
@@ -232,8 +234,8 @@ function App() {
           onClick={() => setShowPasteStack((prev) => !prev)}
           className={`relative rounded-md px-3 py-1 text-sm font-medium transition-colors ${
             showPasteStack
-              ? "bg-neutral-700 text-white"
-              : "text-neutral-400 hover:text-neutral-200"
+              ? "bg-surface-hover text-text-primary"
+              : "text-text-muted hover:text-text-secondary"
           }`}
         >
           Stack
@@ -243,7 +245,7 @@ function App() {
             </span>
           )}
         </button>
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-text-muted">
           {displayClips.length > 0
             ? `${displayClips.length} item${displayClips.length !== 1 ? "s" : ""}`
             : ""}
@@ -280,7 +282,7 @@ function App() {
           onDeletePinboard={deletePinboard}
         />
       ) : (
-        <div className="flex flex-1 items-center justify-center text-neutral-500">
+        <div className="flex flex-1 items-center justify-center text-text-muted">
           Snippets (coming soon)
         </div>
       )}
@@ -308,7 +310,7 @@ function App() {
       )}
 
       {/* Footer with keyboard hints */}
-      <div className="flex items-center gap-4 border-t border-neutral-700 px-4 py-1.5 text-xs text-neutral-500">
+      <div className="flex items-center gap-4 border-t border-border-default px-4 py-1.5 text-xs text-text-muted">
         <span>←→ Navigate</span>
         <span>Enter Paste</span>
         <span>/ Search</span>

@@ -42,7 +42,7 @@ export function LinkCard({ text, metadata }: LinkCardProps) {
       {/* Globe icon + domain */}
       <div className="flex items-center gap-1.5">
         <svg
-          className="h-3.5 w-3.5 shrink-0 text-purple-400"
+          className="h-3.5 w-3.5 shrink-0 text-purple-500 dark:text-purple-400"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -51,25 +51,25 @@ export function LinkCard({ text, metadata }: LinkCardProps) {
           <circle cx="12" cy="12" r="10" />
           <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
         </svg>
-        <span className="truncate text-xs font-medium text-purple-300">
+        <span className="truncate text-xs font-medium text-purple-700 dark:text-purple-300">
           {domain}
         </span>
       </div>
 
       {/* Title if available */}
       {title && (
-        <p className="mt-1.5 line-clamp-2 text-xs leading-snug text-neutral-300">
+        <p className="mt-1.5 line-clamp-2 text-xs leading-snug text-text-primary">
           {title}
         </p>
       )}
 
       {/* Path */}
       {path && (
-        <p className="mt-1 truncate text-[10px] text-neutral-500">{path}</p>
+        <p className="mt-1 truncate text-[10px] text-text-muted">{path}</p>
       )}
 
       {/* Full URL at bottom */}
-      <p className="mt-auto truncate pt-2 text-[10px] text-neutral-600">
+      <p className="mt-auto truncate pt-2 text-[10px] text-text-faint">
         {url}
       </p>
     </div>

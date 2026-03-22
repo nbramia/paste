@@ -1,5 +1,53 @@
 @import "tailwindcss";
 
+/* Configure Tailwind v4 to use class-based dark mode */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
+  /* Custom colors used across the app */
   --color-neutral-750: #333338;
+
+  /* Surface colors — light mode defaults */
+  --color-surface-bg: #f5f5f5;
+  --color-surface-primary: #ffffff;
+  --color-surface-secondary: #f0f0f0;
+  --color-surface-card: #ffffff;
+  --color-surface-hover: #e8e8e8;
+
+  /* Text colors — light mode defaults */
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #6b7280;
+  --color-text-muted: #9ca3af;
+  --color-text-faint: #d1d5db;
+
+  /* Border colors */
+  --color-border-default: #e5e7eb;
+  --color-border-subtle: #f3f4f6;
+}
+
+/* Dark mode overrides */
+.dark {
+  --color-surface-bg: #171717;
+  --color-surface-primary: #262626;
+  --color-surface-secondary: #1f1f1f;
+  --color-surface-card: #262626;
+  --color-surface-hover: #333338;
+
+  --color-text-primary: #f5f5f5;
+  --color-text-secondary: #a3a3a3;
+  --color-text-muted: #737373;
+  --color-text-faint: #525252;
+
+  --color-border-default: #404040;
+  --color-border-subtle: #333333;
+}
+
+/* Base styles */
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: var(--color-surface-bg);
+  color: var(--color-text-primary);
 }

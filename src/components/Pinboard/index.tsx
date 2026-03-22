@@ -72,7 +72,7 @@ export function PinboardView({
     return (
       <div className="flex flex-1 flex-col overflow-hidden p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-neutral-300">Pinboards</h2>
+          <h2 className="text-sm font-medium text-text-secondary">Pinboards</h2>
           <button
             onClick={() => setShowCreate(true)}
             className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500"
@@ -82,7 +82,7 @@ export function PinboardView({
         </div>
 
         {pinboards.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center text-neutral-500">
+          <div className="flex flex-1 items-center justify-center text-text-muted">
             <div className="text-center">
               <p className="text-sm">No pinboards yet</p>
               <p className="mt-1 text-xs">Create one to save your favorite clips</p>
@@ -93,7 +93,7 @@ export function PinboardView({
             {pinboards.map((pb) => (
               <div
                 key={pb.id}
-                className="group flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 cursor-pointer hover:border-neutral-600"
+                className="group flex items-center gap-2 rounded-lg border border-border-default bg-surface-card px-3 py-2 cursor-pointer hover:bg-surface-hover"
               >
                 <span
                   className="h-4 w-4 shrink-0 rounded-full"
@@ -101,13 +101,13 @@ export function PinboardView({
                 />
                 <button
                   onClick={() => handleSelectPinboard(pb.id)}
-                  className="text-sm text-neutral-300 hover:text-white"
+                  className="text-sm text-text-secondary hover:text-text-primary"
                 >
                   {pb.name}
                 </button>
                 <button
                   onClick={() => setEditingPinboard(pb)}
-                  className="ml-1 text-neutral-600 opacity-0 group-hover:opacity-100 hover:text-neutral-300"
+                  className="ml-1 text-text-faint opacity-0 group-hover:opacity-100 hover:text-text-secondary"
                   title="Edit"
                 >
                   <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -117,7 +117,7 @@ export function PinboardView({
                 </button>
                 <button
                   onClick={() => handleDelete(pb.id)}
-                  className="text-neutral-600 opacity-0 group-hover:opacity-100 hover:text-red-400"
+                  className="text-text-faint opacity-0 group-hover:opacity-100 hover:text-red-400"
                   title="Delete"
                 >
                   <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -156,10 +156,10 @@ export function PinboardView({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Back button + pinboard header */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-700/50">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-border-subtle">
         <button
           onClick={() => { setSelectedPinboard(null); setClips([]); }}
-          className="text-neutral-400 hover:text-white"
+          className="text-text-muted hover:text-text-primary"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -168,19 +168,19 @@ export function PinboardView({
         {currentPb && (
           <>
             <span className="h-3 w-3 rounded-full" style={{ backgroundColor: currentPb.color }} />
-            <span className="text-sm font-medium text-neutral-300">{currentPb.name}</span>
+            <span className="text-sm font-medium text-text-secondary">{currentPb.name}</span>
           </>
         )}
-        <span className="ml-auto text-xs text-neutral-500">
+        <span className="ml-auto text-xs text-text-muted">
           {clips.length} clip{clips.length !== 1 ? "s" : ""}
         </span>
       </div>
 
       {/* Clips in horizontal strip */}
       {loading ? (
-        <div className="flex flex-1 items-center justify-center text-neutral-500">Loading...</div>
+        <div className="flex flex-1 items-center justify-center text-text-muted">Loading...</div>
       ) : clips.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center text-neutral-500">
+        <div className="flex flex-1 items-center justify-center text-text-muted">
           <p className="text-sm">No clips in this pinboard</p>
         </div>
       ) : (

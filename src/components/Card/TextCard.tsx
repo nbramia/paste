@@ -9,7 +9,7 @@ export function TextCard({ text }: TextCardProps) {
 
   return (
     <div className="flex-1 overflow-hidden px-3 py-2">
-      <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-neutral-300">
+      <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-text-secondary">
         {display}
       </p>
     </div>

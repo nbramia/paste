@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Paste</title>
+    <script>
+      // Prevent flash of wrong theme
+      (function() {
+        const saved = localStorage.getItem('paste-theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (saved === 'dark' || (saved !== 'light' && prefersDark)) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="/src/index.css" />
   </head>
   <body>

@@ -82,11 +82,11 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
   };
 
   return (
-    <div className="border-b border-neutral-700 px-4 py-2">
+    <div className="border-b border-border-default px-4 py-2">
       <div className="flex items-center gap-2">
         {/* Search icon */}
         <svg
-          className="h-4 w-4 shrink-0 text-neutral-500"
+          className="h-4 w-4 shrink-0 text-text-muted"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -103,7 +103,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
           onChange={(e) => handleQueryChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Search clips... (/ or Ctrl+F)"
-          className="flex-1 bg-transparent text-sm text-white placeholder-neutral-500 outline-none"
+          className="flex-1 bg-transparent text-sm text-text-primary placeholder-text-muted outline-none"
         />
 
         {/* Power Search toggle */}
@@ -112,7 +112,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
           className={`rounded px-2 py-0.5 text-xs transition-colors ${
             showPowerSearch
               ? "bg-blue-600 text-white"
-              : "text-neutral-400 hover:text-neutral-200"
+              : "text-text-muted hover:text-text-secondary"
           }`}
           title="Toggle Power Search (Ctrl+F)"
         >
@@ -123,7 +123,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
         {(query || filters.contentType || filters.sourceApp || filters.dateRange) && (
           <button
             onClick={handleClear}
-            className="text-neutral-400 hover:text-white"
+            className="text-text-muted hover:text-text-primary"
             title="Clear search"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -142,7 +142,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
             onChange={(e) =>
               handleFilterChange({ ...filters, contentType: e.target.value || null })
             }
-            className="rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-300 outline-none"
+            className="rounded bg-surface-secondary px-2 py-1 text-xs text-text-secondary outline-none"
           >
             <option value="">All types</option>
             <option value="text">Text</option>
@@ -158,7 +158,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
             onChange={(e) =>
               handleFilterChange({ ...filters, sourceApp: e.target.value || null })
             }
-            className="rounded bg-neutral-800 px-2 py-1 text-xs text-neutral-300 outline-none"
+            className="rounded bg-surface-secondary px-2 py-1 text-xs text-text-secondary outline-none"
           >
             <option value="">All apps</option>
             {sourceApps.map((app) => (
@@ -186,7 +186,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
                 className={`rounded px-2 py-0.5 text-xs transition-colors ${
                   filters.dateRange === value
                     ? "bg-blue-600 text-white"
-                    : "bg-neutral-800 text-neutral-400 hover:text-neutral-200"
+                    : "bg-surface-secondary text-text-muted hover:text-text-secondary"
                 }`}
               >
                 {label}

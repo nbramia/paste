@@ -35,7 +35,7 @@ export function CreatePinboardDialog({
       onClick={onClose}
     >
       <div
-        className="w-72 rounded-lg border border-neutral-700 bg-neutral-800 p-4 shadow-xl"
+        className="w-72 rounded-lg border border-border-default bg-surface-card p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Enter") handleSave();
@@ -43,7 +43,7 @@ export function CreatePinboardDialog({
           e.stopPropagation();
         }}
       >
-        <h3 className="mb-3 text-sm font-medium text-neutral-300">{title}</h3>
+        <h3 className="mb-3 text-sm font-medium text-text-secondary">{title}</h3>
 
         <input
           type="text"
@@ -51,18 +51,18 @@ export function CreatePinboardDialog({
           onChange={(e) => setName(e.target.value)}
           placeholder="Pinboard name"
           autoFocus
-          className="mb-3 w-full rounded bg-neutral-900 px-3 py-1.5 text-sm text-white placeholder-neutral-500 outline-none focus:ring-1 focus:ring-blue-500"
+          className="mb-3 w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary placeholder-text-muted outline-none focus:ring-1 focus:ring-blue-500"
         />
 
         <div className="mb-3">
-          <p className="mb-1.5 text-xs text-neutral-500">Color</p>
+          <p className="mb-1.5 text-xs text-text-muted">Color</p>
           <div className="flex flex-wrap gap-2">
             {PRESET_COLORS.map((c) => (
               <button
                 key={c}
                 onClick={() => setColor(c)}
                 className={`h-6 w-6 rounded-full transition-all ${
-                  color === c ? "ring-2 ring-white ring-offset-2 ring-offset-neutral-800" : ""
+                  color === c ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-surface-card" : ""
                 }`}
                 style={{ backgroundColor: c }}
               />
@@ -73,7 +73,7 @@ export function CreatePinboardDialog({
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded px-3 py-1 text-xs text-neutral-400 hover:text-white"
+            className="rounded px-3 py-1 text-xs text-text-muted hover:text-text-primary"
           >
             Cancel
           </button>

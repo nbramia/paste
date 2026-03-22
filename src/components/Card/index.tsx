@@ -76,10 +76,10 @@ export function Card({
       data-index={index}
       onClick={onSelect}
       onDoubleClick={onPaste}
-      className={`flex w-48 shrink-0 cursor-pointer flex-col rounded-lg border transition-all ${
+      className={`flex w-48 shrink-0 cursor-pointer flex-col rounded-lg border transition-all shadow-sm dark:shadow-none ${
         isSelected
-          ? "border-blue-500 bg-neutral-750 ring-2 ring-blue-500/30"
-          : "border-neutral-700 bg-neutral-800 hover:border-neutral-600"
+          ? "border-blue-500 ring-2 ring-blue-500/30 bg-surface-hover"
+          : "border-border-default bg-surface-card hover:bg-surface-hover"
       }`}
     >
       {/* Content type indicator */}
@@ -89,11 +89,11 @@ export function Card({
       <CardContent clip={clip} />
 
       {/* Footer */}
-      <div className="flex items-center gap-2 border-t border-neutral-700/50 px-3 py-1.5">
-        <span className="truncate text-xs text-neutral-500">
+      <div className="flex items-center gap-2 border-t border-border-subtle px-3 py-1.5">
+        <span className="truncate text-xs text-text-muted">
           {clip.source_app || "Unknown"}
         </span>
-        <span className="ml-auto text-xs text-neutral-600">
+        <span className="ml-auto text-xs text-text-faint">
           {formatRelativeTime(clip.created_at)}
         </span>
       </div>
