@@ -13,6 +13,7 @@ use injector::{select_injector, Injector};
 use config::AppConfig;
 use clipboard::stack::PasteStack;
 use expander::template::{FillInField, parse_template, extract_fill_in_fields, evaluate_tokens, ExpansionContext};
+use expander::import::{ImportedSnippet, ImportResult, parse_espanso_dir, default_espanso_path};
 
 /// Shared application state managed by Tauri.
 pub struct AppState {
@@ -386,6 +387,66 @@ fn expand_with_fill_ins(
     Ok(evaluate_tokens(&tokens, &ctx).text)
 }
 
+#[tauri::command]
+fn preview_espanso_import(
+    path: Option<String>,
+) -> Result<Vec<ImportedSnippet>, String> {
+    let dir = path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(default_espanso_path);
+    parse_espanso_dir(&dir)
+}
+
+#[tauri::command]
+fn import_espanso(
+    state: tauri::State<'_, AppState>,
+    path: Option<String>,
+) -> Result<ImportResult, String> {
+    let dir = path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(default_espanso_path);
+
+    let snippets = parse_espanso_dir(&dir)?;
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    let mut errors = Vec::new();
+
+    for snippet in &snippets {
+        // Check for duplicate abbreviation
+        match state.storage.get_snippet_by_abbreviation(&snippet.abbreviation) {
+            Ok(Some(_)) => {
+                skipped += 1;
+                continue;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                errors.push(format!("Error checking '{}': {e}", snippet.abbreviation));
+                continue;
+            }
+        }
+
+        let new_snippet = NewSnippet {
+            abbreviation: snippet.abbreviation.clone(),
+            name: snippet.name.clone(),
+            content: snippet.content.clone(),
+            content_type: snippet.content_type.clone(),
+            group_id: None,
+            description: Some(format!("Imported from espanso: {}", snippet.source_file)),
+        };
+
+        match state.storage.create_snippet(&new_snippet) {
+            Ok(_) => imported += 1,
+            Err(e) => errors.push(format!("Failed to import '{}': {e}", snippet.abbreviation)),
+        }
+    }
+
+    Ok(ImportResult {
+        imported,
+        skipped,
+        errors,
+    })
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -440,6 +501,8 @@ pub fn run() {
             delete_snippet_group,
             get_fill_in_fields,
             expand_with_fill_ins,
+            preview_espanso_import,
+            import_espanso,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
