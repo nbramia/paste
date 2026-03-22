@@ -9,6 +9,7 @@ use std::process::Command;
 use log::{info, warn};
 
 pub use clipboard_inject::ClipboardInjector;
+pub use clipboard_inject::RichContent;
 pub use xdotool::XdotoolInjector;
 pub use ydotool::YdotoolInjector;
 pub use wtype::WtypeInjector;
@@ -24,6 +25,9 @@ pub trait Injector: Send + Sync {
 
     /// Send N backspace key presses (for text expander abbreviation deletion).
     fn send_backspaces(&self, count: usize) -> Result<(), InjectorError>;
+
+    /// Inject rich content via clipboard with multiple MIME types.
+    fn inject_rich(&self, content: &clipboard_inject::RichContent) -> Result<(), InjectorError>;
 
     /// The name of this injector backend.
     fn name(&self) -> &'static str;

@@ -9,7 +9,7 @@ mod tray;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup, StorageStats}};
-use injector::{select_injector, Injector};
+use injector::{select_injector, Injector, RichContent};
 use config::AppConfig;
 use clipboard::stack::PasteStack;
 use expander::template::{FillInField, parse_template, extract_fill_in_fields, evaluate_tokens, ExpansionContext};
@@ -55,12 +55,16 @@ fn paste_clip(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Clip not found: {}", id))?;
 
-    // Inject the text content
-    if let Some(ref text) = clip.text_content {
-        state.injector
-            .inject_via_clipboard(text)
-            .map_err(|e| e.to_string())?;
-    }
+    // Use rich paste when HTML or image content is available
+    let rich_content = RichContent {
+        text: clip.text_content.clone(),
+        html: clip.html_content.clone(),
+        image_path: clip.image_path.clone(),
+    };
+
+    state.injector
+        .inject_rich(&rich_content)
+        .map_err(|e| e.to_string())?;
 
     // Increment access count
     state.storage

@@ -48,6 +48,11 @@ impl Injector for XdotoolInjector {
         Ok(())
     }
 
+    fn inject_rich(&self, content: &super::clipboard_inject::RichContent) -> Result<(), InjectorError> {
+        use super::clipboard_inject::clipboard_inject_rich_x11;
+        clipboard_inject_rich_x11(content)
+    }
+
     fn name(&self) -> &'static str {
         "xdotool"
     }
