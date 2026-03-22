@@ -3,6 +3,7 @@ mod config;
 mod expander;
 mod hotkey;
 mod injector;
+mod service;
 mod storage;
 mod tray;
 
@@ -579,6 +580,21 @@ fn reset_config() -> Result<AppConfig, String> {
     Ok(default)
 }
 
+#[tauri::command]
+fn get_autostart_status() -> Result<bool, String> {
+    Ok(service::is_service_installed())
+}
+
+#[tauri::command]
+fn install_autostart() -> Result<String, String> {
+    service::install_service()
+}
+
+#[tauri::command]
+fn uninstall_autostart() -> Result<String, String> {
+    service::uninstall_service()
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -648,6 +664,9 @@ pub fn run() {
             get_config,
             save_config,
             reset_config,
+            get_autostart_status,
+            install_autostart,
+            uninstall_autostart,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
