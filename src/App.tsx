@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { AnimatePresence } from "framer-motion";
 import { Filmstrip } from "./components/Filmstrip";
 import { PasteStackView } from "./components/Filmstrip/PasteStackView";
 import { Search, type SearchFilters } from "./components/Search";
@@ -9,6 +10,7 @@ import { useTheme } from "./hooks/useTheme";
 import { PinboardView, PinboardPicker, CreatePinboardDialog } from "./components/Pinboard";
 import { useSnippets } from "./hooks/useSnippets";
 import { SnippetView } from "./components/Snippet";
+import { CardPreview } from "./components/Card/CardPreview";
 
 export interface ClipData {
   id: string;
@@ -65,6 +67,7 @@ function App() {
   const [showPasteStack, setShowPasteStack] = useState(false);
   const [pasteStackActive, setPasteStackActive] = useState(false);
   const [pasteStackCount, setPasteStackCount] = useState(0);
+  const [showPreview, setShowPreview] = useState(false);
 
   // The clips to display: search results when searching, all clips otherwise
   const displayClips = isSearching ? results : clips;
@@ -172,6 +175,18 @@ function App() {
       if (isSearchFocused) return;
 
       switch (e.key) {
+        case " ": // Space — Quick Look preview
+          e.preventDefault();
+          if (displayClips.length > 0 && displayClips[selectedIndex]) {
+            setShowPreview((prev) => !prev);
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          if (showPreview) {
+            setShowPreview(false);
+          }
+          break;
         case "ArrowRight":
           e.preventDefault();
           setSelectedIndex((prev) =>
@@ -204,7 +219,12 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [displayClips, selectedIndex, pasteSelected, deleteSelected]);
+  }, [displayClips, selectedIndex, pasteSelected, deleteSelected, showPreview]);
+
+  // Close preview when selection changes
+  useEffect(() => {
+    setShowPreview(false);
+  }, [selectedIndex]);
 
   // Scroll selected card into view
   useEffect(() => {
@@ -330,10 +350,22 @@ function App() {
         />
       )}
 
+      {/* Quick Look preview */}
+      <AnimatePresence>
+        {showPreview && displayClips[selectedIndex] && (
+          <CardPreview
+            clip={displayClips[selectedIndex]}
+            onClose={() => setShowPreview(false)}
+            onPaste={pasteSelected}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Footer with keyboard hints */}
       <div className="flex items-center gap-4 border-t border-border-default px-4 py-1.5 text-xs text-text-muted">
         <span>←→ Navigate</span>
         <span>Enter Paste</span>
+        <span>Space Preview</span>
         <span>/ Search</span>
         <span>Del Remove</span>
         <span>Ctrl+P Pin</span>
