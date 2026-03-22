@@ -64,6 +64,17 @@ function CardContent({ clip }: { clip: ClipData }) {
   }
 }
 
+function getCardLabel(clip: ClipData): string {
+  const type = clip.content_type;
+  const source = clip.source_app || "unknown app";
+  const preview = clip.text_content
+    ? clip.text_content.slice(0, 50).replace(/\n/g, " ")
+    : type === "image"
+      ? "Image"
+      : "Clip";
+  return `${type} from ${source}: ${preview}`;
+}
+
 function CardBase({
   clip,
   index,
@@ -76,6 +87,9 @@ function CardBase({
   return (
     <motion.div
       data-index={index}
+      role="button"
+      tabIndex={isSelected ? 0 : -1}
+      aria-label={getCardLabel(clip)}
       onClick={onSelect}
       onDoubleClick={onPaste}
       animate={{

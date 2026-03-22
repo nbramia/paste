@@ -151,6 +151,9 @@ export function CardPreview({ clip, onClose, onPaste }: CardPreviewProps) {
   return (
     <motion.div
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/60"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Clip preview"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
