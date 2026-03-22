@@ -9,22 +9,27 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "tsc --noEmit",
-    "test": "echo \"No tests configured yet\" && exit 0"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-shell": "^2",
+    "framer-motion": "^12",
     "react": "^19",
-    "react-dom": "^19",
-    "framer-motion": "^12"
+    "react-dom": "^19"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
+    "jsdom": "^29.0.1",
     "tailwindcss": "^4",
     "typescript": "~5.7",
-    "vite": "^6"
+    "vite": "^6",
+    "vitest": "^4.1.0"
   }
 }
