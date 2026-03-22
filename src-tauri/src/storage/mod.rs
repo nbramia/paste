@@ -3,6 +3,7 @@
 mod clips;
 mod db;
 mod error;
+mod migrations;
 mod pinboards;
 mod retention;
 mod search;
