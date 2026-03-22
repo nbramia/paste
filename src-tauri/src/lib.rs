@@ -381,6 +381,7 @@ fn expand_with_fill_ins(
     let ctx = ExpansionContext {
         clipboard_content: String::new(),
         fill_values,
+        ..Default::default()
     };
     Ok(evaluate_tokens(&tokens, &ctx).text)
 }

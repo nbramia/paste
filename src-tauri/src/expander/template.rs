@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::process::Command;
+use std::sync::Arc;
 
 use chrono::{Datelike, Duration, Local};
 use serde::{Deserialize, Serialize};
@@ -61,6 +63,10 @@ pub enum TemplateToken {
     FillArea(FillInSpec),
     /// Fill-in: popup/dropdown menu.
     FillPopup(FillPopupSpec),
+    /// Shell command — execute and use stdout.
+    ShellCommand(String),
+    /// Nested snippet — look up by abbreviation and expand recursively.
+    NestedSnippet(String),
 }
 
 /// Units for date math.
@@ -80,6 +86,15 @@ pub struct ExpansionContext {
     pub clipboard_content: String,
     /// User-provided values for fill-in fields (keyed by field name).
     pub fill_values: HashMap<String, String>,
+    /// Lookup function for nested snippets: abbreviation -> template content.
+    /// This avoids coupling the template engine to the storage layer.
+    pub snippet_lookup: Option<Arc<dyn Fn(&str) -> Option<String> + Send + Sync>>,
+    /// Current recursion depth (for nested snippet cycle detection).
+    pub depth: usize,
+    /// Maximum recursion depth for nested snippets.
+    pub max_depth: usize,
+    /// Abbreviations currently being expanded (for cycle detection).
+    pub expanding: Vec<String>,
 }
 
 impl Default for ExpansionContext {
@@ -87,6 +102,10 @@ impl Default for ExpansionContext {
         Self {
             clipboard_content: String::new(),
             fill_values: HashMap::new(),
+            snippet_lookup: None,
+            depth: 0,
+            max_depth: 10,
+            expanding: Vec::new(),
         }
     }
 }
@@ -210,10 +229,11 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
             }
             // %fill(...), %fillarea(...), %fillpopup(...)
             'f' => {
+                // Note: chars.clone() includes the peeked 'f', so rest starts with 'f'
                 let rest: String = chars.clone().take(10).collect();
-                if rest.starts_with("illpopup(") {
-                    // %fillpopup(name:opt1:opt2:opt3)
-                    for _ in 0..9 {
+                if rest.starts_with("fillpopup(") {
+                    // %fillpopup(name:opt1:opt2:opt3) — consume "fillpopup("
+                    for _ in 0..10 {
                         chars.next();
                     }
                     let mut inner = String::new();
@@ -238,9 +258,9 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                     } else {
                         current_literal.push_str(&format!("%fillpopup({inner}"));
                     }
-                } else if rest.starts_with("illarea(") {
-                    // %fillarea(name)
-                    for _ in 0..8 {
+                } else if rest.starts_with("fillarea(") {
+                    // %fillarea(name) — consume "fillarea("
+                    for _ in 0..9 {
                         chars.next();
                     }
                     let mut inner = String::new();
@@ -261,9 +281,9 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                     } else {
                         current_literal.push_str(&format!("%fillarea({inner}"));
                     }
-                } else if rest.starts_with("ill(") {
-                    // %fill(name) or %fill(name:default=value)
-                    for _ in 0..4 {
+                } else if rest.starts_with("fill(") {
+                    // %fill(name) or %fill(name:default=value) — consume "fill("
+                    for _ in 0..5 {
                         chars.next();
                     }
                     let mut inner = String::new();
@@ -282,6 +302,60 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                         current_literal.push_str(&format!("%fill({inner}"));
                     }
                 } else {
+                    current_literal.push('%');
+                }
+            }
+            // %shell(...) or %snippet(...)
+            's' => {
+                // Note: chars.clone() includes the peeked 's', so rest starts with 's'
+                let rest: String = chars.clone().take(8).collect();
+                if rest.starts_with("shell(") {
+                    // %shell(command) — consume "shell("
+                    for _ in 0..6 {
+                        chars.next();
+                    }
+                    let mut inner = String::new();
+                    let mut paren_depth = 1u32;
+                    while let Some(c) = chars.next() {
+                        if c == '(' {
+                            paren_depth += 1;
+                        }
+                        if c == ')' {
+                            paren_depth -= 1;
+                            if paren_depth == 0 {
+                                break;
+                            }
+                        }
+                        inner.push(c);
+                    }
+                    if paren_depth == 0 {
+                        flush_literal(&mut current_literal, &mut tokens);
+                        tokens.push(TemplateToken::ShellCommand(inner));
+                    } else {
+                        current_literal.push_str(&format!("%shell({inner}"));
+                    }
+                } else if rest.starts_with("snippet(") {
+                    // %snippet(abbreviation) — consume "snippet("
+                    for _ in 0..8 {
+                        chars.next();
+                    }
+                    let mut inner = String::new();
+                    let mut found_close = false;
+                    while let Some(c) = chars.next() {
+                        if c == ')' {
+                            found_close = true;
+                            break;
+                        }
+                        inner.push(c);
+                    }
+                    if found_close && !inner.is_empty() {
+                        flush_literal(&mut current_literal, &mut tokens);
+                        tokens.push(TemplateToken::NestedSnippet(inner));
+                    } else {
+                        current_literal.push_str(&format!("%snippet({inner}"));
+                    }
+                } else {
+                    // Unknown %s... — leave as literal
                     current_literal.push('%');
                 }
             }
@@ -415,6 +489,12 @@ pub fn evaluate_tokens(tokens: &[TemplateToken], ctx: &ExpansionContext) -> Expa
                     text.push_str(first);
                 }
             }
+            TemplateToken::ShellCommand(cmd) => {
+                text.push_str(&execute_shell_command(cmd));
+            }
+            TemplateToken::NestedSnippet(abbr) => {
+                text.push_str(&expand_nested_snippet(abbr, ctx));
+            }
         }
     }
 
@@ -475,6 +555,86 @@ fn days_in_month(year: i32, month: u32) -> u32 {
         }
         _ => 30,
     }
+}
+
+/// Execute a shell command and return its stdout.
+/// Times out after 5 seconds. Returns error text on failure.
+fn execute_shell_command(command: &str) -> String {
+    use std::process::Stdio;
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    let cmd = command.to_string();
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let result = Command::new("sh")
+            .args(["-c", &cmd])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output();
+        let _ = tx.send(result);
+    });
+
+    match rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(output)) => {
+            if output.status.success() {
+                let mut stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                // Trim trailing newline (common in command output)
+                if stdout.ends_with('\n') {
+                    stdout.pop();
+                    if stdout.ends_with('\r') {
+                        stdout.pop();
+                    }
+                }
+                stdout
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                format!("[shell error: exit {}, {}]", output.status, stderr.trim())
+            }
+        }
+        Ok(Err(e)) => format!("[shell error: {e}]"),
+        Err(_) => "[shell error: timeout (5s)]".to_string(),
+    }
+}
+
+/// Expand a nested snippet by looking up its abbreviation and recursively evaluating.
+/// Detects cycles and enforces maximum recursion depth.
+fn expand_nested_snippet(abbreviation: &str, ctx: &ExpansionContext) -> String {
+    // Check max depth
+    if ctx.depth >= ctx.max_depth {
+        return format!("[snippet error: max depth ({}) exceeded]", ctx.max_depth);
+    }
+
+    // Check for cycles
+    if ctx.expanding.contains(&abbreviation.to_string()) {
+        return format!("[snippet error: circular reference to '{abbreviation}']");
+    }
+
+    // Look up the snippet
+    let Some(ref lookup) = ctx.snippet_lookup else {
+        return format!("[snippet error: no lookup configured]");
+    };
+
+    let Some(template) = lookup(abbreviation) else {
+        return format!("[snippet error: '{abbreviation}' not found]");
+    };
+
+    // Parse and evaluate recursively with increased depth
+    let tokens = parse_template(&template);
+    let mut expanding = ctx.expanding.clone();
+    expanding.push(abbreviation.to_string());
+
+    let nested_ctx = ExpansionContext {
+        clipboard_content: ctx.clipboard_content.clone(),
+        fill_values: ctx.fill_values.clone(),
+        snippet_lookup: Some(Arc::clone(lookup)),
+        depth: ctx.depth + 1,
+        max_depth: ctx.max_depth,
+        expanding,
+    };
+    evaluate_tokens(&tokens, &nested_ctx).text
 }
 
 /// Convenience: parse and evaluate a template with default context.
@@ -934,5 +1094,193 @@ mod tests {
     fn test_has_fill_in_fields() {
         assert!(has_fill_in_fields("Hello %fill(name)"));
         assert!(!has_fill_in_fields("Hello %Y-%m-%d"));
+    }
+
+    // --- Shell command tests ---
+
+    #[test]
+    fn test_parse_shell_command() {
+        let tokens = parse_template("%shell(echo hello)");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], TemplateToken::ShellCommand("echo hello".into()));
+    }
+
+    #[test]
+    fn test_parse_shell_with_nested_parens() {
+        let tokens = parse_template("%shell(echo $(date))");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(
+            tokens[0],
+            TemplateToken::ShellCommand("echo $(date)".into())
+        );
+    }
+
+    #[test]
+    fn test_parse_shell_unclosed() {
+        let tokens = parse_template("%shell(echo hello");
+        assert_eq!(tokens.len(), 1);
+        // Unclosed paren — treated as literal
+        assert_eq!(
+            tokens[0],
+            TemplateToken::Literal("%shell(echo hello".into())
+        );
+    }
+
+    #[test]
+    fn test_parse_snippet() {
+        let tokens = parse_template("Hello %snippet(;sig)!");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0], TemplateToken::Literal("Hello ".into()));
+        assert_eq!(tokens[1], TemplateToken::NestedSnippet(";sig".into()));
+        assert_eq!(tokens[2], TemplateToken::Literal("!".into()));
+    }
+
+    #[test]
+    fn test_parse_snippet_empty_name() {
+        let tokens = parse_template("%snippet()");
+        // Empty name — treated as literal
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], TemplateToken::Literal("%snippet(".into()));
+    }
+
+    #[test]
+    fn test_parse_shell_in_context() {
+        let tokens = parse_template("Today is %shell(date +%%F) ok");
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0], TemplateToken::Literal("Today is ".into()));
+        assert_eq!(
+            tokens[1],
+            TemplateToken::ShellCommand("date +%%F".into())
+        );
+        assert_eq!(tokens[2], TemplateToken::Literal(" ok".into()));
+    }
+
+    #[test]
+    fn test_evaluate_shell_echo() {
+        let result = expand_template("%shell(echo hello)");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_evaluate_shell_strips_trailing_newline() {
+        let result = expand_template("%shell(printf 'hello\\n')");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_evaluate_shell_failure() {
+        let result = expand_template("%shell(false)");
+        assert!(result.starts_with("[shell error:"));
+    }
+
+    #[test]
+    fn test_evaluate_shell_multiline() {
+        let result = expand_template("%shell(printf 'line1\\nline2')");
+        assert_eq!(result, "line1\nline2");
+    }
+
+    // --- Nested snippet tests ---
+
+    #[test]
+    fn test_evaluate_nested_snippet() {
+        let lookup: Arc<dyn Fn(&str) -> Option<String> + Send + Sync> =
+            Arc::new(|abbr: &str| match abbr {
+                ";sig" => Some("Best regards".into()),
+                _ => None,
+            });
+        let ctx = ExpansionContext {
+            snippet_lookup: Some(lookup),
+            ..Default::default()
+        };
+        let result = expand_template_with_context("Hello, %snippet(;sig)", &ctx);
+        assert_eq!(result.text, "Hello, Best regards");
+    }
+
+    #[test]
+    fn test_nested_snippet_not_found() {
+        let lookup: Arc<dyn Fn(&str) -> Option<String> + Send + Sync> = Arc::new(|_| None);
+        let ctx = ExpansionContext {
+            snippet_lookup: Some(lookup),
+            ..Default::default()
+        };
+        let result = expand_template_with_context("%snippet(;nope)", &ctx);
+        assert!(result.text.contains("not found"));
+    }
+
+    #[test]
+    fn test_nested_snippet_cycle_detection() {
+        let lookup: Arc<dyn Fn(&str) -> Option<String> + Send + Sync> =
+            Arc::new(|abbr: &str| match abbr {
+                ";a" => Some("A then %snippet(;b)".into()),
+                ";b" => Some("B then %snippet(;a)".into()),
+                _ => None,
+            });
+        let ctx = ExpansionContext {
+            snippet_lookup: Some(lookup),
+            ..Default::default()
+        };
+        let result = expand_template_with_context("%snippet(;a)", &ctx);
+        assert!(result.text.contains("circular reference"));
+    }
+
+    #[test]
+    fn test_nested_snippet_max_depth() {
+        // Use a chain of different abbreviations to avoid cycle detection
+        // and test max depth instead: ;a -> ;b -> ;c -> ;d (depth exceeds 3)
+        let lookup: Arc<dyn Fn(&str) -> Option<String> + Send + Sync> =
+            Arc::new(|abbr: &str| match abbr {
+                ";a" => Some("A-%snippet(;b)".into()),
+                ";b" => Some("B-%snippet(;c)".into()),
+                ";c" => Some("C-%snippet(;d)".into()),
+                ";d" => Some("D-%snippet(;e)".into()),
+                ";e" => Some("E".into()),
+                _ => None,
+            });
+        let ctx = ExpansionContext {
+            snippet_lookup: Some(lookup),
+            max_depth: 3,
+            ..Default::default()
+        };
+        let result = expand_template_with_context("%snippet(;a)", &ctx);
+        assert!(result.text.contains("max depth"));
+    }
+
+    #[test]
+    fn test_nested_snippet_multi_level() {
+        let lookup: Arc<dyn Fn(&str) -> Option<String> + Send + Sync> =
+            Arc::new(|abbr: &str| match abbr {
+                ";phone" => Some("555-1234".into()),
+                ";sig" => Some("John\nPhone: %snippet(;phone)".into()),
+                _ => None,
+            });
+        let ctx = ExpansionContext {
+            snippet_lookup: Some(lookup),
+            ..Default::default()
+        };
+        let result = expand_template_with_context("%snippet(;sig)", &ctx);
+        assert_eq!(result.text, "John\nPhone: 555-1234");
+    }
+
+    #[test]
+    fn test_no_lookup_configured() {
+        let ctx = ExpansionContext::default();
+        let result = expand_template_with_context("%snippet(;test)", &ctx);
+        assert!(result.text.contains("no lookup"));
+    }
+
+    #[test]
+    fn test_shell_and_snippet_combined() {
+        let lookup: Arc<dyn Fn(&str) -> Option<String> + Send + Sync> =
+            Arc::new(|abbr: &str| match abbr {
+                ";name" => Some("Alice".into()),
+                _ => None,
+            });
+        let ctx = ExpansionContext {
+            snippet_lookup: Some(lookup),
+            ..Default::default()
+        };
+        let result =
+            expand_template_with_context("Hi %snippet(;name), today is %shell(echo Monday)", &ctx);
+        assert_eq!(result.text, "Hi Alice, today is Monday");
     }
 }
