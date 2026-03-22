@@ -38,6 +38,9 @@ function App() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<TabView>("history");
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE_SIZE = 50;
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const { results, isSearching, loading: searchLoading, search, clearSearch } = useSearch();
@@ -78,9 +81,10 @@ function App() {
       setLoading(true);
       const result = await invoke<ClipData[]>("get_clips", {
         offset: 0,
-        limit: 50,
+        limit: PAGE_SIZE,
       });
       setClips(result);
+      setHasMore(result.length === PAGE_SIZE);
       setSelectedIndex(0);
     } catch (err) {
       console.error("Failed to load clips:", err);
@@ -88,6 +92,25 @@ function App() {
       setLoading(false);
     }
   }, []);
+
+  const loadMoreClips = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
+    try {
+      setLoadingMore(true);
+      const result = await invoke<ClipData[]>("get_clips", {
+        offset: clips.length,
+        limit: PAGE_SIZE,
+      });
+      if (result.length > 0) {
+        setClips((prev) => [...prev, ...result]);
+      }
+      setHasMore(result.length === PAGE_SIZE);
+    } catch (err) {
+      console.error("Failed to load more clips:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [clips.length, hasMore, loadingMore]);
 
   useEffect(() => {
     loadClips();
@@ -305,6 +328,9 @@ function App() {
           onPaste={pasteSelected}
           loading={displayLoading}
           containerRef={containerRef}
+          onLoadMore={isSearching ? undefined : loadMoreClips}
+          hasMore={isSearching ? false : hasMore}
+          loadingMore={isSearching ? false : loadingMore}
         />
       ) : activeTab === "pinboards" ? (
         <PinboardView
