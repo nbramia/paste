@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { motion } from "framer-motion";
 import type { ClipData } from "../../App";
 import { TextCard } from "./TextCard";
@@ -63,7 +64,7 @@ function CardContent({ clip }: { clip: ClipData }) {
   }
 }
 
-export function Card({
+function CardBase({
   clip,
   index,
   isSelected,
@@ -110,3 +111,5 @@ export function Card({
     </motion.div>
   );
 }
+
+export const Card = memo(CardBase);

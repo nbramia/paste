@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence } from "framer-motion";
 import { Filmstrip } from "./components/Filmstrip";
@@ -75,8 +75,14 @@ function App() {
   const [showEditor, setShowEditor] = useState(false);
 
   // The clips to display: search results when searching, all clips otherwise
-  const displayClips = isSearching ? results : clips;
-  const displayLoading = isSearching ? searchLoading : loading;
+  const displayClips = useMemo(
+    () => (isSearching ? results : clips),
+    [isSearching, results, clips],
+  );
+  const displayLoading = useMemo(
+    () => (isSearching ? searchLoading : loading),
+    [isSearching, searchLoading, loading],
+  );
 
   const loadClips = useCallback(async () => {
     try {
