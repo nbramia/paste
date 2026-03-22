@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { SnippetData, SnippetGroupData } from "../../hooks/useSnippets";
 import { SnippetEditor } from "./SnippetEditor";
 
@@ -27,6 +28,7 @@ interface SnippetViewProps {
   onDeleteSnippet: (id: string) => Promise<void>;
   onCreateGroup: (name: string) => Promise<void>;
   onDeleteGroup: (id: string) => Promise<void>;
+  onReload: () => Promise<void>;
   loading: boolean;
 }
 
@@ -38,12 +40,33 @@ export function SnippetView({
   onDeleteSnippet,
   onCreateGroup,
   onDeleteGroup,
+  onReload,
   loading,
 }: SnippetViewProps) {
   const [showEditor, setShowEditor] = useState(false);
   const [editingSnippet, setEditingSnippet] = useState<SnippetData | undefined>();
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+
+  const handleImportEspanso = async () => {
+    try {
+      const result = await invoke<{ imported: number; skipped: number; errors: string[] }>(
+        "import_espanso",
+        {}
+      );
+      const parts = [];
+      if (result.imported > 0) parts.push(`${result.imported} imported`);
+      if (result.skipped > 0) parts.push(`${result.skipped} skipped (duplicates)`);
+      if (result.errors.length > 0) parts.push(`${result.errors.length} errors`);
+      setImportMessage(parts.join(", ") || "No snippets found");
+      await onReload();
+      setTimeout(() => setImportMessage(null), 5000);
+    } catch (err) {
+      setImportMessage(`Import failed: ${err}`);
+      setTimeout(() => setImportMessage(null), 5000);
+    }
+  };
 
   if (loading) {
     return (
@@ -107,6 +130,13 @@ export function SnippetView({
         </h2>
         <div className="flex gap-2">
           <button
+            onClick={handleImportEspanso}
+            className="rounded px-2 py-1 text-xs text-text-muted hover:text-text-primary"
+            title="Import snippets from espanso config"
+          >
+            Import espanso
+          </button>
+          <button
             onClick={() => setShowNewGroup(true)}
             className="rounded px-2 py-1 text-xs text-text-muted hover:text-text-primary"
           >
@@ -120,6 +150,13 @@ export function SnippetView({
           </button>
         </div>
       </div>
+
+      {/* Import feedback */}
+      {importMessage && (
+        <div className="mb-3 rounded bg-surface-secondary px-3 py-2 text-xs text-text-secondary">
+          {importMessage}
+        </div>
+      )}
 
       {/* New group input */}
       {showNewGroup && (

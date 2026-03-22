@@ -2,6 +2,7 @@
 
 pub mod buffer;
 pub mod engine;
+pub mod import;
 pub mod keymap;
 pub mod matcher;
 pub mod template;

@@ -53,6 +53,7 @@ function App() {
     snippets,
     groups: snippetGroups,
     loading: snippetsLoading,
+    reload: reloadSnippets,
     createSnippet,
     updateSnippet,
     deleteSnippet,
@@ -302,6 +303,7 @@ function App() {
           onDeleteSnippet={deleteSnippet}
           onCreateGroup={createSnippetGroup}
           onDeleteGroup={deleteSnippetGroup}
+          onReload={reloadSnippets}
           loading={snippetsLoading}
         />
       )}
