@@ -13,9 +13,15 @@
     "windows": [
       {
         "title": "Paste",
+        "label": "main",
         "width": 1200,
-        "height": 400,
-        "resizable": true
+        "height": 350,
+        "resizable": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "transparent": true,
+        "skipTaskbar": true,
+        "visible": true
       }
     ]
   },
