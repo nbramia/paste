@@ -58,6 +58,34 @@ impl WaylandClipboard {
             }
         }
 
+        // Try gdbus for GNOME
+        if let Ok(output) = Command::new("gdbus")
+            .args([
+                "call",
+                "--session",
+                "--dest", "org.gnome.Shell",
+                "--object-path", "/org/gnome/Shell",
+                "--method", "org.gnome.Shell.Eval",
+                "global.display.focus_window ? global.display.focus_window.get_wm_class() : ''",
+            ])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(text) = std::str::from_utf8(&output.stdout) {
+                    // gdbus returns: (true, 'ClassName')
+                    // Extract the class name from between quotes
+                    if let Some(start) = text.find('\'') {
+                        if let Some(end) = text[start + 1..].find('\'') {
+                            let class = &text[start + 1..start + 1 + end];
+                            if !class.is_empty() {
+                                return Some(class.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         None
     }
 

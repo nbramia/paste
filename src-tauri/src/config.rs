@@ -92,6 +92,7 @@ impl Default for ClipboardConfig {
                 "1password".into(),
                 "keepassxc".into(),
                 "bitwarden".into(),
+                "lastpass".into(),
             ],
             max_content_size_mb: 10,
         }
@@ -300,7 +301,7 @@ mod tests {
         assert_eq!(config.hotkeys.paste_stack_mode, "Super+Shift+V");
         assert_eq!(config.clipboard.monitor_primary, true);
         assert_eq!(config.clipboard.monitor_clipboard, true);
-        assert_eq!(config.clipboard.excluded_apps.len(), 3);
+        assert_eq!(config.clipboard.excluded_apps.len(), 4);
         assert_eq!(config.storage.max_history_days, 90);
         assert_eq!(config.storage.max_history_count, 10000);
         assert_eq!(config.ui.theme, "system");
