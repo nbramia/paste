@@ -4,6 +4,7 @@ mod expander;
 mod hotkey;
 mod injector;
 mod logging;
+mod overlay;
 mod service;
 mod storage;
 mod tray;
@@ -873,6 +874,12 @@ pub fn run() {
             if let Err(e) = tray::setup_tray(app.handle()) {
                 log::error!("Failed to setup tray: {e}");
                 // Continue without tray — not fatal
+            }
+
+            // Position the window as a bottom-edge overlay
+            if let Err(e) = overlay::setup_overlay(app.handle()) {
+                log::error!("Failed to setup overlay positioning: {e}");
+                // Continue with default window position — not fatal
             }
 
             // Run retention on startup and schedule periodic runs
