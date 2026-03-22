@@ -6,11 +6,13 @@ mod injector;
 mod storage;
 mod tray;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup}};
 use injector::{select_injector, Injector};
 use config::AppConfig;
 use clipboard::stack::PasteStack;
+use expander::template::{FillInField, parse_template, extract_fill_in_fields, evaluate_tokens, ExpansionContext};
 
 /// Shared application state managed by Tauri.
 pub struct AppState {
@@ -364,6 +366,25 @@ fn delete_snippet_group(
     state.storage.delete_snippet_group(&id).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn get_fill_in_fields(template: String) -> Vec<FillInField> {
+    let tokens = parse_template(&template);
+    extract_fill_in_fields(&tokens)
+}
+
+#[tauri::command]
+fn expand_with_fill_ins(
+    template: String,
+    fill_values: HashMap<String, String>,
+) -> Result<String, String> {
+    let tokens = parse_template(&template);
+    let ctx = ExpansionContext {
+        clipboard_content: String::new(),
+        fill_values,
+    };
+    Ok(evaluate_tokens(&tokens, &ctx).text)
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -416,6 +437,8 @@ pub fn run() {
             list_snippet_groups,
             create_snippet_group,
             delete_snippet_group,
+            get_fill_in_fields,
+            expand_with_fill_ins,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
