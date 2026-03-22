@@ -83,7 +83,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
   };
 
   return (
-    <div className="border-b border-border-default px-4 py-2">
+    <div className="border-b border-border-default px-4 py-2" role="search">
       <div className="flex items-center gap-2">
         {/* Search icon */}
         <svg
@@ -100,6 +100,8 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
         <input
           ref={searchRef}
           type="text"
+          role="searchbox"
+          aria-label="Search clipboard history"
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -110,6 +112,8 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
         {/* Power Search toggle */}
         <button
           onClick={() => setShowPowerSearch(!showPowerSearch)}
+          aria-expanded={showPowerSearch}
+          aria-label={showPowerSearch ? "Hide search filters" : "Show search filters"}
           className={`rounded px-2 py-0.5 text-xs transition-colors ${
             showPowerSearch
               ? "bg-blue-600 text-white"

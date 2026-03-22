@@ -11,6 +11,9 @@ export function PinboardPicker({ pinboards, onSelect, onCreateNew, onClose }: Pi
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Select pinboard"
       onClick={onClose}
     >
       <div

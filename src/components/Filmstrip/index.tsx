@@ -70,12 +70,18 @@ export function Filmstrip({
   return (
     <div
       ref={containerRef}
+      role="listbox"
+      aria-label="Clipboard history"
+      aria-orientation="horizontal"
       className="flex flex-1 items-stretch gap-3 overflow-x-auto px-4 py-3"
     >
       <AnimatePresence mode="popLayout">
         {clips.map((clip, index) => (
           <motion.div
             key={clip.id}
+            role="option"
+            aria-selected={index === selectedIndex}
+            aria-label={`${clip.content_type} clip from ${clip.source_app || "unknown"}`}
             layout={anim.isEnabled}
             initial={anim.isEnabled ? { opacity: 0, scale: 0.9, x: -20 } : false}
             animate={{ opacity: 1, scale: 1, x: 0 }}

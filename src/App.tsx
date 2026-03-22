@@ -322,10 +322,12 @@ function App() {
   return (
     <div className="flex h-screen flex-col bg-surface-bg text-text-primary select-none">
       {/* Tab bar */}
-      <div className="flex items-center gap-1 border-b border-border-default px-4 py-2">
+      <div className="flex items-center gap-1 border-b border-border-default px-4 py-2" role="tablist" aria-label="Content views">
         {(["history", "pinboards", "snippets"] as TabView[]).map((tab) => (
           <button
             key={tab}
+            role="tab"
+            aria-selected={activeTab === tab && !showPasteStack}
             onClick={() => {
               setActiveTab(tab);
               setShowPasteStack(false);
@@ -355,7 +357,7 @@ function App() {
             </span>
           )}
         </button>
-        <span className="text-xs text-text-muted">
+        <span className="text-xs text-text-muted" aria-live="polite">
           {displayClips.length > 0
             ? `${displayClips.length} item${displayClips.length !== 1 ? "s" : ""}`
             : ""}
@@ -372,6 +374,7 @@ function App() {
       )}
 
       {/* Tab content */}
+      <div role="tabpanel" aria-label={`${showPasteStack ? "stack" : activeTab} content`}>
       {showPasteStack ? (
         <PasteStackView onStatusChange={handlePasteStackStatusChange} />
       ) : activeTab === "history" ? (
@@ -407,6 +410,7 @@ function App() {
           loading={snippetsLoading}
         />
       )}
+      </div>
 
       {/* Pinboard picker modal */}
       {showPinboardPicker && (
@@ -453,7 +457,11 @@ function App() {
       </AnimatePresence>
 
       {/* Footer with keyboard hints */}
-      <div className="flex items-center gap-4 border-t border-border-default px-4 py-1.5 text-xs text-text-muted">
+      <div
+        className="flex items-center gap-4 border-t border-border-default px-4 py-1.5 text-xs text-text-muted"
+        role="toolbar"
+        aria-label="Keyboard shortcuts"
+      >
         <span>←→ Navigate</span>
         <span>Enter Paste</span>
         <span>⇧Enter Plain</span>

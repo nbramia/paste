@@ -53,6 +53,9 @@ export function SnippetEditor({ snippet, groups, onSave, onClose }: SnippetEdito
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-label={isEditing ? "Edit snippet" : "Create snippet"}
       onClick={onClose}
     >
       <div
