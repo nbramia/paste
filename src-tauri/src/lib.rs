@@ -7,7 +7,7 @@ mod storage;
 mod tray;
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup}};
 use injector::{select_injector, Injector};
 use config::AppConfig;
@@ -20,6 +20,7 @@ pub struct AppState {
     pub storage: Storage,
     pub injector: Arc<dyn Injector>,
     pub paste_stack: PasteStack,
+    pub excluded_apps: Mutex<Vec<String>>,
 }
 
 #[tauri::command]
@@ -447,6 +448,37 @@ fn import_espanso(
     })
 }
 
+#[tauri::command]
+fn get_excluded_apps(
+    state: tauri::State<'_, AppState>,
+) -> Vec<String> {
+    state.excluded_apps.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn add_excluded_app(
+    state: tauri::State<'_, AppState>,
+    app_name: String,
+) -> Vec<String> {
+    let mut apps = state.excluded_apps.lock().unwrap();
+    let lower = app_name.to_lowercase();
+    if !apps.iter().any(|a| a.to_lowercase() == lower) {
+        apps.push(app_name);
+    }
+    apps.clone()
+}
+
+#[tauri::command]
+fn remove_excluded_app(
+    state: tauri::State<'_, AppState>,
+    app_name: String,
+) -> Vec<String> {
+    let mut apps = state.excluded_apps.lock().unwrap();
+    let lower = app_name.to_lowercase();
+    apps.retain(|a| a.to_lowercase() != lower);
+    apps.clone()
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -466,6 +498,7 @@ pub fn run() {
         storage,
         injector: Arc::from(injector),
         paste_stack: PasteStack::new(),
+        excluded_apps: Mutex::new(config.clipboard.excluded_apps.clone()),
     };
 
     tauri::Builder::default()
@@ -503,6 +536,9 @@ pub fn run() {
             expand_with_fill_ins,
             preview_espanso_import,
             import_espanso,
+            get_excluded_apps,
+            add_excluded_app,
+            remove_excluded_app,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
