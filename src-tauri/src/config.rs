@@ -31,6 +31,8 @@ pub struct ClipboardConfig {
     pub monitor_clipboard: bool,
     pub excluded_apps: Vec<String>,
     pub max_content_size_mb: u32,
+    pub merge_growing: bool,
+    pub debounce_ms: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +97,8 @@ impl Default for ClipboardConfig {
                 "lastpass".into(),
             ],
             max_content_size_mb: 10,
+            merge_growing: true,
+            debounce_ms: 500,
         }
     }
 }
