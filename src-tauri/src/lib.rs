@@ -10,11 +10,13 @@ use std::sync::Arc;
 use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard}};
 use injector::{select_injector, Injector};
 use config::AppConfig;
+use clipboard::stack::PasteStack;
 
 /// Shared application state managed by Tauri.
 pub struct AppState {
     pub storage: Storage,
     pub injector: Arc<dyn Injector>,
+    pub paste_stack: PasteStack,
 }
 
 #[tauri::command]
@@ -189,6 +191,96 @@ fn quick_paste(
     Ok(())
 }
 
+#[tauri::command]
+fn toggle_paste_stack(
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    let active = state.paste_stack.toggle();
+    Ok(active)
+}
+
+#[tauri::command]
+fn get_paste_stack(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<Clip>, String> {
+    Ok(state.paste_stack.get_all())
+}
+
+#[tauri::command]
+fn get_paste_stack_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<(bool, usize), String> {
+    Ok((state.paste_stack.is_active(), state.paste_stack.len()))
+}
+
+#[tauri::command]
+fn add_to_paste_stack(
+    state: tauri::State<'_, AppState>,
+    clip_id: String,
+) -> Result<(), String> {
+    let clip = state.storage
+        .get_clip_by_id(&clip_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Clip not found: {}", clip_id))?;
+    state.paste_stack.push(clip);
+    Ok(())
+}
+
+#[tauri::command]
+fn pop_paste_stack(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let clip = state.paste_stack.pop_next();
+
+    // If stack is now empty, auto-deactivate
+    if state.paste_stack.is_empty() {
+        state.paste_stack.deactivate();
+    }
+
+    // If we got a clip, inject it
+    if let Some(ref clip) = clip {
+        if let Some(ref text) = clip.text_content {
+            state.injector
+                .inject_via_clipboard(text)
+                .map_err(|e| e.to_string())?;
+        }
+        state.storage
+            .increment_access_count(&clip.id)
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(clip.map(|c| c.id))
+}
+
+#[tauri::command]
+fn remove_from_paste_stack(
+    state: tauri::State<'_, AppState>,
+    clip_id: String,
+) -> Result<(), String> {
+    state.paste_stack.remove(&clip_id);
+    Ok(())
+}
+
+#[tauri::command]
+fn reorder_paste_stack(
+    state: tauri::State<'_, AppState>,
+    from_index: usize,
+    to_index: usize,
+) -> Result<(), String> {
+    if !state.paste_stack.reorder(from_index, to_index) {
+        return Err("Invalid reorder indices".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn clear_paste_stack(
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    state.paste_stack.deactivate();
+    Ok(())
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -207,6 +299,7 @@ pub fn run() {
     let app_state = AppState {
         storage,
         injector: Arc::from(injector),
+        paste_stack: PasteStack::new(),
     };
 
     tauri::Builder::default()
@@ -225,6 +318,14 @@ pub fn run() {
             add_clip_to_pinboard,
             remove_clip_from_pinboard,
             quick_paste,
+            toggle_paste_stack,
+            get_paste_stack,
+            get_paste_stack_status,
+            add_to_paste_stack,
+            pop_paste_stack,
+            remove_from_paste_stack,
+            reorder_paste_stack,
+            clear_paste_stack,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
