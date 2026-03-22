@@ -157,6 +157,38 @@ fn remove_clip_from_pinboard(
     state.storage.update_clip_pinboard(&clip_id, None).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn quick_paste(
+    state: tauri::State<'_, AppState>,
+    n: usize,
+) -> Result<(), String> {
+    if n == 0 || n > 9 {
+        return Err("Quick paste index must be between 1 and 9".into());
+    }
+
+    // Get the Nth most recent clip (n=1 means most recent, offset=0)
+    let clips = state.storage
+        .get_clips(n - 1, 1, &ClipFilters::default())
+        .map_err(|e| e.to_string())?;
+
+    let clip = clips.into_iter().next()
+        .ok_or_else(|| format!("No clip at position {}", n))?;
+
+    // Inject the text content
+    if let Some(ref text) = clip.text_content {
+        state.injector
+            .inject_via_clipboard(text)
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Increment access count
+    state.storage
+        .increment_access_count(&clip.id)
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -192,6 +224,7 @@ pub fn run() {
             delete_pinboard,
             add_clip_to_pinboard,
             remove_clip_from_pinboard,
+            quick_paste,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
