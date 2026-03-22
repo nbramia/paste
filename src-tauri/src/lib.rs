@@ -566,6 +566,45 @@ fn update_clip_content(
 }
 
 #[tauri::command]
+fn paste_clips_multi(
+    state: tauri::State<'_, AppState>,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    let start = Instant::now();
+
+    // Collect text content from all clips in order
+    let mut texts: Vec<String> = Vec::new();
+    for id in &ids {
+        let clip = state.storage
+            .get_clip_by_id(id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Clip not found: {}", id))?;
+
+        if let Some(text) = clip.text_content {
+            texts.push(text);
+        }
+
+        // Increment access count for each
+        let _ = state.storage.increment_access_count(id);
+    }
+
+    if texts.is_empty() {
+        return Ok(());
+    }
+
+    // Concatenate with newlines and paste
+    let combined = texts.join("\n");
+    state.injector
+        .inject_via_clipboard(&combined)
+        .map_err(|e| e.to_string())?;
+
+    let elapsed = start.elapsed();
+    log::debug!("paste_clips_multi: {}ms ({} clips)", elapsed.as_millis(), ids.len());
+
+    Ok(())
+}
+
+#[tauri::command]
 fn paste_clip_plain(
     state: tauri::State<'_, AppState>,
     id: String,
@@ -724,6 +763,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_clips,
             paste_clip,
+            paste_clips_multi,
             paste_clip_plain,
             update_clip_content,
             delete_clip,

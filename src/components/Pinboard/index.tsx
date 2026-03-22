@@ -191,6 +191,7 @@ export function PinboardView({
               clip={clip}
               index={index}
               isSelected={false}
+              isMultiSelected={false}
               onSelect={() => {}}
               onPaste={() => {}}
             />

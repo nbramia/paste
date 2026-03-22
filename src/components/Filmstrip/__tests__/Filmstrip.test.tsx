@@ -12,6 +12,7 @@ describe("Filmstrip", () => {
       <Filmstrip
         clips={[]}
         selectedIndex={0}
+        multiSelectedIds={new Set()}
         onSelect={() => {}}
         onPaste={() => {}}
         loading={true}
@@ -26,6 +27,7 @@ describe("Filmstrip", () => {
       <Filmstrip
         clips={[]}
         selectedIndex={0}
+        multiSelectedIds={new Set()}
         onSelect={() => {}}
         onPaste={() => {}}
         loading={false}
@@ -40,6 +42,7 @@ describe("Filmstrip", () => {
       <Filmstrip
         clips={mockClips}
         selectedIndex={0}
+        multiSelectedIds={new Set()}
         onSelect={() => {}}
         onPaste={() => {}}
         loading={false}
@@ -55,6 +58,7 @@ describe("Filmstrip", () => {
       <Filmstrip
         clips={mockClips}
         selectedIndex={0}
+        multiSelectedIds={new Set()}
         onSelect={() => {}}
         onPaste={() => {}}
         loading={false}
