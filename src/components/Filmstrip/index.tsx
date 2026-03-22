@@ -21,7 +21,7 @@ export function Filmstrip({
 }: FilmstripProps) {
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-neutral-500">
+      <div className="flex flex-1 items-center justify-center text-text-muted">
         Loading...
       </div>
     );
@@ -29,7 +29,7 @@ export function Filmstrip({
 
   if (clips.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center text-neutral-500">
+      <div className="flex flex-1 items-center justify-center text-text-muted">
         <div className="text-center">
           <p className="text-lg">No clipboard history yet</p>
           <p className="mt-1 text-sm">Copy something to get started</p>

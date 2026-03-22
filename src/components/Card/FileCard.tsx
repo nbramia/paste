@@ -23,7 +23,7 @@ export function FileCard({ text }: FileCardProps) {
     <div className="flex flex-1 flex-col items-center justify-center overflow-hidden px-3 py-2">
       {/* File icon */}
       <svg
-        className="h-8 w-8 text-yellow-400"
+        className="h-8 w-8 text-yellow-600 dark:text-yellow-400"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -33,11 +33,11 @@ export function FileCard({ text }: FileCardProps) {
         <polyline points="14 2 14 8 20 8" />
       </svg>
       {ext && (
-        <span className="mt-1 rounded bg-yellow-900/40 px-1.5 py-0.5 text-[10px] font-medium uppercase text-yellow-400">
+        <span className="mt-1 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400 px-1.5 py-0.5 text-[10px] font-medium uppercase">
           {ext}
         </span>
       )}
-      <p className="mt-1.5 max-w-full truncate text-center text-xs text-neutral-300">
+      <p className="mt-1.5 max-w-full truncate text-center text-xs text-text-secondary">
         {filename}
       </p>
     </div>

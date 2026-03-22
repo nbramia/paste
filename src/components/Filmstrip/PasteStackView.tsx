@@ -81,7 +81,7 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center text-neutral-500">
+      <div className="flex flex-1 items-center justify-center text-text-muted">
         Loading...
       </div>
     );
@@ -92,12 +92,12 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium text-neutral-300">Paste Stack</h2>
+          <h2 className="text-sm font-medium text-text-secondary">Paste Stack</h2>
           <span
             className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
               active
-                ? "bg-green-900/50 text-green-400"
-                : "bg-neutral-700 text-neutral-400"
+                ? "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400"
+                : "bg-surface-hover text-text-muted"
             }`}
           >
             {active ? `ON · ${items.length} items` : "OFF"}
@@ -115,7 +115,7 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
               </button>
               <button
                 onClick={handleClear}
-                className="rounded px-2 py-1 text-xs text-neutral-400 hover:text-white"
+                className="rounded px-2 py-1 text-xs text-text-muted hover:text-text-primary"
               >
                 Clear
               </button>
@@ -125,8 +125,8 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
             onClick={handleToggle}
             className={`rounded px-2 py-1 text-xs font-medium ${
               active
-                ? "bg-red-900/50 text-red-400 hover:bg-red-900"
-                : "bg-green-900/50 text-green-400 hover:bg-green-900"
+                ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400 dark:hover:bg-red-900"
+                : "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-400 dark:hover:bg-green-900"
             }`}
           >
             {active ? "Deactivate" : "Activate"}
@@ -136,14 +136,14 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
 
       {/* Instructions when inactive */}
       {!active && (
-        <div className="flex flex-1 items-center justify-center text-neutral-500">
+        <div className="flex flex-1 items-center justify-center text-text-muted">
           <div className="text-center">
             <p className="text-sm">Paste Stack is inactive</p>
             <p className="mt-1 text-xs">
               Activate to start collecting clips. Each Ctrl+V will paste the
               next item in sequence.
             </p>
-            <p className="mt-2 text-xs text-neutral-600">
+            <p className="mt-2 text-xs text-text-faint">
               Shortcut: Super+Shift+V
             </p>
           </div>
@@ -152,9 +152,9 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
 
       {/* Stack items when active */}
       {active && items.length === 0 && (
-        <div className="flex flex-1 items-center justify-center text-neutral-500">
+        <div className="flex flex-1 items-center justify-center text-text-muted">
           <div className="text-center">
-            <p className="text-sm">Stack is empty — copy items to add them</p>
+            <p className="text-sm">Stack is empty -- copy items to add them</p>
             <p className="mt-1 text-xs">
               Items are pasted in order (first in, first out)
             </p>
@@ -167,17 +167,17 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
           {items.map((item, index) => (
             <div
               key={item.id}
-              className="flex items-center gap-2 rounded border border-neutral-700 bg-neutral-800 px-3 py-2"
+              className="flex items-center gap-2 rounded border border-border-default bg-surface-card px-3 py-2"
             >
-              <span className="w-5 shrink-0 text-center text-xs font-mono text-neutral-600">
+              <span className="w-5 shrink-0 text-center text-xs font-mono text-text-faint">
                 {index + 1}
               </span>
-              <p className="flex-1 truncate text-xs text-neutral-300">
+              <p className="flex-1 truncate text-xs text-text-secondary">
                 {item.text_content || "[Non-text content]"}
               </p>
               <button
                 onClick={() => handleRemove(item.id)}
-                className="shrink-0 text-neutral-600 hover:text-red-400"
+                className="shrink-0 text-text-faint hover:text-red-400"
                 title="Remove from stack"
               >
                 <svg
