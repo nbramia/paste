@@ -7,6 +7,8 @@ import { useSearch } from "./hooks/useSearch";
 import { usePinboards } from "./hooks/usePinboards";
 import { useTheme } from "./hooks/useTheme";
 import { PinboardView, PinboardPicker, CreatePinboardDialog } from "./components/Pinboard";
+import { useSnippets } from "./hooks/useSnippets";
+import { SnippetView } from "./components/Snippet";
 
 export interface ClipData {
   id: string;
@@ -47,6 +49,16 @@ function App() {
     deletePinboard,
     addClipToPinboard,
   } = usePinboards();
+  const {
+    snippets,
+    groups: snippetGroups,
+    loading: snippetsLoading,
+    createSnippet,
+    updateSnippet,
+    deleteSnippet,
+    createGroup: createSnippetGroup,
+    deleteGroup: deleteSnippetGroup,
+  } = useSnippets();
   const [showPinboardPicker, setShowPinboardPicker] = useState(false);
   const [showCreatePinboard, setShowCreatePinboard] = useState(false);
   const [showPasteStack, setShowPasteStack] = useState(false);
@@ -282,9 +294,16 @@ function App() {
           onDeletePinboard={deletePinboard}
         />
       ) : (
-        <div className="flex flex-1 items-center justify-center text-text-muted">
-          Snippets (coming soon)
-        </div>
+        <SnippetView
+          snippets={snippets}
+          groups={snippetGroups}
+          onCreateSnippet={createSnippet}
+          onUpdateSnippet={updateSnippet}
+          onDeleteSnippet={deleteSnippet}
+          onCreateGroup={createSnippetGroup}
+          onDeleteGroup={deleteSnippetGroup}
+          loading={snippetsLoading}
+        />
       )}
 
       {/* Pinboard picker modal */}

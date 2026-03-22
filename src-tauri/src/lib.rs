@@ -7,7 +7,7 @@ mod storage;
 mod tray;
 
 use std::sync::Arc;
-use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard}};
+use storage::{Storage, models::{Clip, ClipFilters, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup}};
 use injector::{select_injector, Injector};
 use config::AppConfig;
 use clipboard::stack::PasteStack;
@@ -281,6 +281,89 @@ fn clear_paste_stack(
     Ok(())
 }
 
+#[tauri::command]
+fn list_snippets(
+    state: tauri::State<'_, AppState>,
+    group_id: Option<String>,
+) -> Result<Vec<Snippet>, String> {
+    state.storage.list_snippets(group_id.as_deref()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_snippet(
+    state: tauri::State<'_, AppState>,
+    abbreviation: String,
+    name: String,
+    content: String,
+    content_type: String,
+    group_id: Option<String>,
+    description: Option<String>,
+) -> Result<Snippet, String> {
+    let new = NewSnippet {
+        abbreviation,
+        name,
+        content,
+        content_type,
+        group_id,
+        description,
+    };
+    state.storage.create_snippet(&new).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_snippet(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    abbreviation: String,
+    name: String,
+    content: String,
+    content_type: String,
+    group_id: Option<String>,
+    description: Option<String>,
+) -> Result<Snippet, String> {
+    let update = UpdateSnippet {
+        abbreviation,
+        name,
+        content,
+        content_type,
+        group_id,
+        description,
+    };
+    state.storage.update_snippet(&id, &update).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_snippet(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    state.storage.delete_snippet(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn list_snippet_groups(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<SnippetGroup>, String> {
+    state.storage.list_snippet_groups().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_snippet_group(
+    state: tauri::State<'_, AppState>,
+    name: String,
+) -> Result<SnippetGroup, String> {
+    let new = NewSnippetGroup { name };
+    state.storage.create_snippet_group(&new).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_snippet_group(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    state.storage.delete_snippet_group(&id).map_err(|e| e.to_string())
+}
+
 pub fn run() {
     // Load config
     let config = AppConfig::load().unwrap_or_else(|e| {
@@ -326,6 +409,13 @@ pub fn run() {
             remove_from_paste_stack,
             reorder_paste_stack,
             clear_paste_stack,
+            list_snippets,
+            create_snippet,
+            update_snippet,
+            delete_snippet,
+            list_snippet_groups,
+            create_snippet_group,
+            delete_snippet_group,
         ])
         .setup(|app| {
             tray::setup_tray(app.handle())?;
