@@ -18,7 +18,7 @@ export function ExpanderSettings({ expander, onChange }: ExpanderSettingsProps) 
             type="checkbox"
             checked={expander.enabled}
             onChange={(e) => onChange({ ...expander, enabled: e.target.checked })}
-            className="h-4 w-4 rounded accent-blue-500"
+            className="h-4 w-4 rounded accent-accent"
           />
         </label>
         <div className="flex items-center justify-between">
@@ -41,7 +41,7 @@ export function ExpanderSettings({ expander, onChange }: ExpanderSettingsProps) 
             onKeyDown={(e) => e.stopPropagation()}
             min={0}
             max={100}
-            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
       </div>

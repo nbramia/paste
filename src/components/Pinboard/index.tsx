@@ -72,10 +72,10 @@ export function PinboardView({
     return (
       <div className="flex flex-1 flex-col overflow-hidden p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-text-secondary">Pinboards</h2>
+          <h2 className="font-heading text-sm font-semibold text-text-secondary tracking-wide">Pinboards</h2>
           <button
             onClick={() => setShowCreate(true)}
-            className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500"
+            className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover"
           >
             + New
           </button>
@@ -168,7 +168,7 @@ export function PinboardView({
         {currentPb && (
           <>
             <span className="h-3 w-3 rounded-full" style={{ backgroundColor: currentPb.color }} />
-            <span className="text-sm font-medium text-text-secondary">{currentPb.name}</span>
+            <span className="font-heading text-sm font-semibold text-text-secondary tracking-wide">{currentPb.name}</span>
           </>
         )}
         <span className="ml-auto text-xs text-text-muted">

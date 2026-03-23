@@ -19,7 +19,7 @@ export function ClipboardSettings({ clipboard, onChange }: ClipboardSettingsProp
             type="checkbox"
             checked={clipboard.monitor_clipboard}
             onChange={(e) => onChange({ ...clipboard, monitor_clipboard: e.target.checked })}
-            className="h-4 w-4 rounded accent-blue-500"
+            className="h-4 w-4 rounded accent-accent"
           />
         </label>
         <label className="flex items-center justify-between">
@@ -28,7 +28,7 @@ export function ClipboardSettings({ clipboard, onChange }: ClipboardSettingsProp
             type="checkbox"
             checked={clipboard.monitor_primary}
             onChange={(e) => onChange({ ...clipboard, monitor_primary: e.target.checked })}
-            className="h-4 w-4 rounded accent-blue-500"
+            className="h-4 w-4 rounded accent-accent"
           />
         </label>
         <div className="flex items-center justify-between">
@@ -40,7 +40,7 @@ export function ClipboardSettings({ clipboard, onChange }: ClipboardSettingsProp
             onKeyDown={(e) => e.stopPropagation()}
             min={1}
             max={100}
-            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
       </div>

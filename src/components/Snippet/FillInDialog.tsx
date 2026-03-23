@@ -77,7 +77,7 @@ export function FillInDialog({
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
-        <h3 className="mb-3 text-sm font-medium text-text-primary">{title}</h3>
+        <h3 className="mb-3 font-heading text-sm font-semibold text-text-primary tracking-wide">{title}</h3>
 
         <div className="space-y-3">
           {fields.map((field, index) => (
@@ -96,7 +96,7 @@ export function FillInDialog({
                   type="text"
                   value={values[field.name] || ""}
                   onChange={(e) => handleChange(field.name, e.target.value)}
-                  className="w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary outline-none focus:ring-1 focus:ring-accent"
                 />
               )}
 
@@ -110,7 +110,7 @@ export function FillInDialog({
                   value={values[field.name] || ""}
                   onChange={(e) => handleChange(field.name, e.target.value)}
                   rows={3}
-                  className="w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary outline-none focus:ring-1 focus:ring-accent"
                 />
               )}
 
@@ -123,7 +123,7 @@ export function FillInDialog({
                   }
                   value={values[field.name] || ""}
                   onChange={(e) => handleChange(field.name, e.target.value)}
-                  className="w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary outline-none focus:ring-1 focus:ring-accent"
                 >
                   {field.options?.map((opt) => (
                     <option key={opt} value={opt}>
@@ -145,7 +145,7 @@ export function FillInDialog({
           </button>
           <button
             onClick={handleSubmit}
-            className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+            className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
           >
             Expand
           </button>

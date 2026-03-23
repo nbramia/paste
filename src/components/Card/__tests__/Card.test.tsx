@@ -53,7 +53,7 @@ describe("Card", () => {
       <Card clip={mockClips[0]} {...defaultProps} isSelected={true} />,
     );
     const card = container.firstChild as HTMLElement;
-    expect(card.className).toContain("border-blue-500");
+    expect(card.className).toContain("border-accent");
   });
 
   it("shows Unknown for missing source app", () => {
@@ -64,7 +64,7 @@ describe("Card", () => {
 
   it("renders content type color indicator", () => {
     const { container } = render(<Card clip={mockClips[0]} {...defaultProps} />);
-    const indicator = container.querySelector(".bg-blue-500");
+    const indicator = container.querySelector(".bg-type-text");
     expect(indicator).toBeInTheDocument();
   });
 });

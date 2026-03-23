@@ -85,12 +85,12 @@ export function ExclusionList() {
             e.stopPropagation();
           }}
           placeholder="App name (e.g., keepassxc)"
-          className="flex-1 rounded bg-surface-secondary px-2 py-1 text-xs text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-blue-500"
+          className="flex-1 rounded bg-surface-secondary px-2 py-1 text-xs text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-accent"
         />
         <button
           onClick={handleAdd}
           disabled={!newApp.trim()}
-          className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-500 disabled:opacity-50"
+          className="rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
         >
           Add
         </button>

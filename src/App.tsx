@@ -378,7 +378,7 @@ function App() {
               setActiveTab(tab);
               setShowPasteStack(false);
             }}
-            className={`rounded-md px-3 py-1 text-sm font-medium capitalize transition-colors ${
+            className={`font-heading rounded-md px-3 py-1 text-sm font-semibold capitalize tracking-wide transition-colors ${
               activeTab === tab && !showPasteStack
                 ? "bg-surface-hover text-text-primary"
                 : "text-text-muted hover:text-text-secondary"
@@ -390,7 +390,7 @@ function App() {
         <div className="flex-1" />
         <button
           onClick={() => setShowPasteStack((prev) => !prev)}
-          className={`relative rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+          className={`font-heading relative rounded-md px-3 py-1 text-sm font-semibold tracking-wide transition-colors ${
             showPasteStack
               ? "bg-surface-hover text-text-primary"
               : "text-text-muted hover:text-text-secondary"
@@ -398,7 +398,7 @@ function App() {
         >
           Stack
           {pasteStackActive && (
-            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-green-600 px-1 text-[10px] font-bold text-white">
+            <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-white">
               {pasteStackCount}
             </span>
           )}
@@ -508,21 +508,28 @@ function App() {
 
       {/* Footer with keyboard hints */}
       <div
-        className="flex items-center gap-4 border-t border-border-default px-4 py-1.5 text-xs text-text-muted"
+        className="flex items-center gap-2 border-t border-border-default px-4 py-1.5 text-[11px] text-text-muted font-heading tracking-wide"
         role="toolbar"
         aria-label="Keyboard shortcuts"
       >
-        <span>←→ Navigate</span>
-        <span>Enter Paste</span>
-        <span>⇧Enter Plain</span>
-        <span>Space Preview</span>
-        <span>F Fav</span>
-        <span>/ Search</span>
-        <span>⌃E Edit</span>
-        <span>⌃P Pin</span>
-        <span>Del Remove</span>
-        <span>Tab Views</span>
-        <span>Esc Close</span>
+        {[
+          "←→ Navigate",
+          "↵ Paste",
+          "⇧↵ Plain",
+          "␣ Preview",
+          "F Fav",
+          "/ Search",
+          "⌃E Edit",
+          "⌃P Pin",
+          "⌫ Remove",
+          "⇥ Views",
+          "Esc Close",
+        ].map((hint, i) => (
+          <span key={hint} className="flex items-center gap-2">
+            {i > 0 && <span className="text-text-faint">·</span>}
+            {hint}
+          </span>
+        ))}
       </div>
     </div>
   );

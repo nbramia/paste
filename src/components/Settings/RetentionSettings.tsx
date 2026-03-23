@@ -133,7 +133,7 @@ export function RetentionSettings() {
 
       {/* Message */}
       {message && (
-        <div className="mb-2 rounded bg-blue-900/30 px-2 py-1 text-xs text-blue-400">
+        <div className="mb-2 rounded bg-accent-soft px-2 py-1 text-xs text-accent-muted">
           {message}
         </div>
       )}
@@ -148,7 +148,7 @@ export function RetentionSettings() {
         </button>
         <button
           onClick={handleClearHistory}
-          className="rounded bg-red-900/30 px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/50"
+          className="rounded bg-red-950/30 px-3 py-1.5 text-xs text-red-400 hover:bg-red-950/40"
         >
           Clear All History
         </button>

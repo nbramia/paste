@@ -46,7 +46,7 @@ export function CreatePinboardDialog({
           e.stopPropagation();
         }}
       >
-        <h3 className="mb-3 text-sm font-medium text-text-secondary">{title}</h3>
+        <h3 className="mb-3 font-heading text-sm font-semibold text-text-secondary tracking-wide">{title}</h3>
 
         <input
           type="text"
@@ -54,7 +54,7 @@ export function CreatePinboardDialog({
           onChange={(e) => setName(e.target.value)}
           placeholder="Pinboard name"
           autoFocus
-          className="mb-3 w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary placeholder-text-muted outline-none focus:ring-1 focus:ring-blue-500"
+          className="mb-3 w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary placeholder-text-muted outline-none focus:ring-1 focus:ring-accent"
         />
 
         <div className="mb-3">
@@ -65,7 +65,7 @@ export function CreatePinboardDialog({
                 key={c}
                 onClick={() => setColor(c)}
                 className={`h-6 w-6 rounded-full transition-all ${
-                  color === c ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-surface-card" : ""
+                  color === c ? "ring-2 ring-accent ring-offset-2 ring-offset-surface-card" : ""
                 }`}
                 style={{ backgroundColor: c }}
               />
@@ -83,7 +83,7 @@ export function CreatePinboardDialog({
           <button
             onClick={handleSave}
             disabled={!name.trim()}
-            className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
           >
             Save
           </button>

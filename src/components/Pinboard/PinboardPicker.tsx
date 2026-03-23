@@ -20,7 +20,7 @@ export function PinboardPicker({ pinboards, onSelect, onCreateNew, onClose }: Pi
         className="w-64 rounded-lg border border-border-default bg-surface-card p-3 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="mb-2 text-sm font-medium text-text-secondary">Save to Pinboard</h3>
+        <h3 className="mb-2 font-heading text-sm font-semibold text-text-secondary tracking-wide">Save to Pinboard</h3>
 
         {pinboards.length === 0 ? (
           <p className="text-xs text-text-muted mb-2">No pinboards yet</p>
@@ -44,7 +44,7 @@ export function PinboardPicker({ pinboards, onSelect, onCreateNew, onClose }: Pi
 
         <button
           onClick={onCreateNew}
-          className="w-full rounded bg-blue-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+          className="w-full rounded bg-accent px-2 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
         >
           + New Pinboard
         </button>

@@ -118,7 +118,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
           aria-label={showPowerSearch ? "Hide search filters" : "Show search filters"}
           className={`rounded px-2 py-0.5 text-xs transition-colors ${
             showPowerSearch
-              ? "bg-blue-600 text-white"
+              ? "bg-accent text-white"
               : "text-text-muted hover:text-text-secondary"
           }`}
           title="Toggle Power Search (Ctrl+F)"
@@ -200,7 +200,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
                     }
                     className={`rounded px-2 py-0.5 text-xs transition-colors ${
                       filters.dateRange === value
-                        ? "bg-blue-600 text-white"
+                        ? "bg-accent text-white"
                         : "bg-surface-secondary text-text-muted hover:text-text-secondary"
                     }`}
                   >
@@ -216,7 +216,7 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
                 }
                 className={`rounded px-2 py-0.5 text-xs transition-colors ${
                   filters.isFavorite
-                    ? "bg-yellow-600 text-white"
+                    ? "bg-amber-600 text-white"
                     : "bg-surface-secondary text-text-muted hover:text-text-primary"
                 }`}
               >

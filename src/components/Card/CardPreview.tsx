@@ -15,7 +15,7 @@ function PreviewContent({ clip }: { clip: ClipData }) {
   switch (clip.content_type) {
     case "code":
       return (
-        <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-secondary p-4 font-mono text-sm leading-relaxed text-emerald-700 dark:text-emerald-300/90">
+        <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-secondary p-4 font-mono text-sm leading-relaxed text-emerald-800 dark:text-emerald-400">
           {clip.text_content || ""}
         </pre>
       );
@@ -111,7 +111,7 @@ function PreviewContent({ clip }: { clip: ClipData }) {
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
             <polyline points="14 2 14 8 20 8" />
           </svg>
-          <p className="text-sm font-medium text-text-primary break-all text-center">
+          <p className="font-heading text-sm font-semibold text-text-primary tracking-wide break-all text-center">
             {clip.text_content || ""}
           </p>
         </div>
@@ -171,7 +171,7 @@ export function CardPreview({ clip, onClose, onPaste }: CardPreviewProps) {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border-default px-4 py-2">
           <div className="flex items-center gap-2">
-            <span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
+            <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent-muted">
               {contentTypeLabels[clip.content_type] || clip.content_type}
             </span>
             {clip.source_app && (
@@ -231,7 +231,7 @@ export function CardPreview({ clip, onClose, onPaste }: CardPreviewProps) {
                 onPaste();
                 onClose();
               }}
-              className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-500"
+              className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover"
             >
               Paste
             </button>

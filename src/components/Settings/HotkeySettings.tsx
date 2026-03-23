@@ -28,7 +28,7 @@ export function HotkeySettings({ hotkeys, onChange }: HotkeySettingsProps) {
               value={hotkeys[key]}
               onChange={(e) => onChange({ ...hotkeys, [key]: e.target.value })}
               onKeyDown={(e) => e.stopPropagation()}
-              className="w-40 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-40 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-accent"
             />
           </div>
         ))}

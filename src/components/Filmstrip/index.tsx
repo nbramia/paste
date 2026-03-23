@@ -132,7 +132,7 @@ export function Filmstrip({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`flex flex-1 items-stretch gap-3 overflow-x-auto px-4 py-3 transition-colors ${
-        isDragOver ? "bg-blue-500/10 ring-2 ring-inset ring-blue-500/30" : ""
+        isDragOver ? "bg-accent/10 ring-2 ring-inset ring-accent/25" : ""
       }`}
     >
       <AnimatePresence mode="popLayout">

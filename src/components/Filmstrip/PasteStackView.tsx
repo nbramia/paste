@@ -92,11 +92,11 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium text-text-secondary">Paste Stack</h2>
+          <h2 className="font-heading text-sm font-semibold text-text-secondary tracking-wide">Paste Stack</h2>
           <span
             className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
               active
-                ? "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400"
+                ? "bg-green-100 text-green-700 dark:bg-accent-soft dark:text-accent-muted"
                 : "bg-surface-hover text-text-muted"
             }`}
           >
@@ -109,7 +109,7 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
             <>
               <button
                 onClick={handlePasteNext}
-                className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500"
+                className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover"
               >
                 Paste Next
               </button>
@@ -125,8 +125,8 @@ export function PasteStackView({ onStatusChange }: PasteStackViewProps) {
             onClick={handleToggle}
             className={`rounded px-2 py-1 text-xs font-medium ${
               active
-                ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/50 dark:text-red-400 dark:hover:bg-red-900"
-                : "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-400 dark:hover:bg-green-900"
+                ? "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-900"
+                : "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-accent-soft dark:text-accent-muted dark:hover:bg-accent-hover"
             }`}
           >
             {active ? "Deactivate" : "Activate"}

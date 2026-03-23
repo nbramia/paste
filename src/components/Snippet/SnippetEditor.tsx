@@ -66,12 +66,12 @@ export function SnippetEditor({ snippet, groups, onSave, onClose }: SnippetEdito
           e.stopPropagation();
         }}
       >
-        <h3 className="mb-3 text-sm font-medium text-text-primary">
+        <h3 className="mb-3 font-heading text-sm font-semibold text-text-primary tracking-wide">
           {isEditing ? "Edit Snippet" : "Create Snippet"}
         </h3>
 
         {error && (
-          <div className="mb-3 rounded bg-red-900/30 px-3 py-1.5 text-xs text-red-400">
+          <div className="mb-3 rounded bg-red-950/30 px-3 py-1.5 text-xs text-red-400">
             {error}
           </div>
         )}
@@ -84,7 +84,7 @@ export function SnippetEditor({ snippet, groups, onSave, onClose }: SnippetEdito
           onChange={(e) => setAbbreviation(e.target.value)}
           placeholder="e.g., ;sig"
           autoFocus
-          className="mb-3 w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-blue-500"
+          className="mb-3 w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-accent"
         />
 
         {/* Name */}
@@ -94,7 +94,7 @@ export function SnippetEditor({ snippet, groups, onSave, onClose }: SnippetEdito
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g., Email Signature"
-          className="mb-3 w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-blue-500"
+          className="mb-3 w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-accent"
         />
 
         {/* Content */}
@@ -104,7 +104,7 @@ export function SnippetEditor({ snippet, groups, onSave, onClose }: SnippetEdito
           onChange={(e) => setContent(e.target.value)}
           placeholder="Expansion text..."
           rows={5}
-          className="mb-2 w-full rounded bg-surface-secondary px-3 py-1.5 font-mono text-sm text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-blue-500"
+          className="mb-2 w-full rounded bg-surface-secondary px-3 py-1.5 font-mono text-sm text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-accent"
         />
         <p className="mb-3 text-[10px] text-text-faint">
           Macros: %Y (year) %m (month) %d (day) %H (hour) %M (min) %clipboard %date(+5d) %| (cursor) %fill(name) %fillarea(name) %fillpopup(name:opt1:opt2) %shell(command) %snippet(abbr)
@@ -144,7 +144,7 @@ export function SnippetEditor({ snippet, groups, onSave, onClose }: SnippetEdito
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What this snippet does"
-          className="mb-4 w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-blue-500"
+          className="mb-4 w-full rounded bg-surface-secondary px-3 py-1.5 text-sm text-text-primary placeholder-text-faint outline-none focus:ring-1 focus:ring-accent"
         />
 
         {/* Actions */}
@@ -157,7 +157,7 @@ export function SnippetEditor({ snippet, groups, onSave, onClose }: SnippetEdito
           </button>
           <button
             onClick={handleSave}
-            className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+            className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
           >
             {isEditing ? "Save Changes" : "Create Snippet"}
           </button>

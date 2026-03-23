@@ -120,10 +120,10 @@ export function Settings() {
   return (
     <div className="flex flex-1 flex-col overflow-y-auto p-4">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-text-secondary">Settings</h2>
+        <h2 className="font-heading text-sm font-semibold text-text-secondary tracking-wide">Settings</h2>
         <div className="flex items-center gap-2">
           {saveMessage && (
-            <span className="text-[10px] text-blue-400">{saveMessage}</span>
+            <span className="text-[10px] text-accent-muted">{saveMessage}</span>
           )}
           <button
             onClick={handleReset}

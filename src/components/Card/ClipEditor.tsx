@@ -74,8 +74,8 @@ export function ClipEditor({ clip, onSave, onClose }: ClipEditorProps) {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border-default px-4 py-2">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-text-primary">Edit Clip</span>
-            <span className="rounded bg-blue-900/30 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
+            <span className="font-heading text-sm font-semibold text-text-primary tracking-wide">Edit Clip</span>
+            <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent-muted">
               {clip.content_type}
             </span>
           </div>
@@ -92,7 +92,7 @@ export function ClipEditor({ clip, onSave, onClose }: ClipEditorProps) {
         {/* Editor */}
         <div className="p-4">
           {error && (
-            <div className="mb-2 rounded bg-red-900/30 px-3 py-1.5 text-xs text-red-400">
+            <div className="mb-2 rounded bg-red-950/30 px-3 py-1.5 text-xs text-red-400">
               {error}
             </div>
           )}
@@ -102,7 +102,7 @@ export function ClipEditor({ clip, onSave, onClose }: ClipEditorProps) {
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={12}
-            className={`w-full rounded bg-surface-secondary p-3 text-sm leading-relaxed text-text-primary outline-none focus:ring-1 focus:ring-blue-500 ${
+            className={`w-full rounded bg-surface-secondary p-3 text-sm leading-relaxed text-text-primary outline-none focus:ring-1 focus:ring-accent ${
               isCode ? "font-mono" : ""
             }`}
           />
@@ -123,7 +123,7 @@ export function ClipEditor({ clip, onSave, onClose }: ClipEditorProps) {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
               {saving ? "Saving..." : "Save"}
             </button>

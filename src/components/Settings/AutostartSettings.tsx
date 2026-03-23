@@ -47,7 +47,7 @@ export function AutostartSettings() {
           onClick={handleToggle}
           className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
             installed
-              ? "bg-green-900/30 text-green-400 hover:bg-green-900/50"
+              ? "bg-accent-soft text-accent-muted hover:bg-accent-soft"
               : "bg-surface-secondary text-text-muted hover:text-text-primary"
           }`}
         >
@@ -55,7 +55,7 @@ export function AutostartSettings() {
         </button>
       </div>
       {message && (
-        <p className="mt-1 text-[10px] text-blue-400">{message}</p>
+        <p className="mt-1 text-[10px] text-accent-muted">{message}</p>
       )}
     </div>
   );

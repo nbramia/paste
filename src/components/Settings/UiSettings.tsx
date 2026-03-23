@@ -41,7 +41,7 @@ export function UiSettings({ ui, onChange, onThemeChange }: UiSettingsProps) {
             onKeyDown={(e) => e.stopPropagation()}
             min={100}
             max={800}
-            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -53,7 +53,7 @@ export function UiSettings({ ui, onChange, onThemeChange }: UiSettingsProps) {
             onKeyDown={(e) => e.stopPropagation()}
             min={2}
             max={20}
-            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
         <div className="flex items-center justify-between">
@@ -66,7 +66,7 @@ export function UiSettings({ ui, onChange, onThemeChange }: UiSettingsProps) {
             min={0}
             max={3}
             step={0.1}
-            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-20 rounded bg-surface-secondary px-2 py-1 text-right text-xs text-text-primary outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
         <label className="flex items-center justify-between">
@@ -75,7 +75,7 @@ export function UiSettings({ ui, onChange, onThemeChange }: UiSettingsProps) {
             type="checkbox"
             checked={ui.blur_background}
             onChange={(e) => onChange({ ...ui, blur_background: e.target.checked })}
-            className="h-4 w-4 rounded accent-blue-500"
+            className="h-4 w-4 rounded accent-accent"
           />
         </label>
       </div>

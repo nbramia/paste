@@ -176,7 +176,7 @@ export function SnippetView({
     <div className="flex flex-1 flex-col overflow-y-auto p-4">
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-text-secondary">
+        <h2 className="font-heading text-sm font-semibold text-text-secondary tracking-wide">
           Snippets ({snippets.length})
         </h2>
         <div className="flex gap-2">
@@ -209,7 +209,7 @@ export function SnippetView({
           </button>
           <button
             onClick={handleCreate}
-            className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500"
+            className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover"
           >
             + Snippet
           </button>
@@ -241,7 +241,7 @@ export function SnippetView({
           />
           <button
             onClick={handleCreateGroup}
-            className="rounded bg-blue-600 px-2 py-1 text-xs text-white"
+            className="rounded bg-accent px-2 py-1 text-xs text-white"
           >
             Add
           </button>
@@ -346,7 +346,7 @@ function SnippetCard({
   return (
     <div className="group flex items-center gap-3 rounded border border-border-default bg-surface-card px-3 py-2">
       {/* Abbreviation */}
-      <code className="shrink-0 rounded bg-blue-900/30 px-1.5 py-0.5 text-xs font-bold text-blue-400">
+      <code className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-xs font-bold text-accent-muted">
         {snippet.abbreviation}
       </code>
 

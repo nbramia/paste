@@ -17,11 +17,11 @@ interface CardProps {
 }
 
 const typeColors: Record<string, string> = {
-  text: "bg-blue-500",
-  code: "bg-green-500",
-  link: "bg-purple-500",
-  image: "bg-orange-500",
-  file: "bg-yellow-500",
+  text: "bg-type-text",
+  code: "bg-type-code",
+  link: "bg-type-link",
+  image: "bg-type-image",
+  file: "bg-type-file",
 };
 
 function formatRelativeTime(isoDate: string): string {
@@ -139,7 +139,7 @@ function CardBase({
         isMultiSelected
           ? "border-emerald-500 ring-2 ring-emerald-500/30 bg-surface-hover"
           : isSelected
-            ? "border-blue-500 ring-2 ring-blue-500/30 bg-surface-hover"
+            ? "border-accent ring-2 ring-accent/25 bg-surface-hover"
             : "border-border-default bg-surface-card hover:bg-surface-hover"
       }`}
     >
@@ -153,7 +153,7 @@ function CardBase({
       )}
 
       {/* Content type indicator */}
-      <div className={`h-1 rounded-t-lg ${typeColor}`} />
+      <div className={`h-1.5 rounded-t-lg ${typeColor}`} />
 
       {/* Content preview — dispatched by type */}
       <CardContent clip={clip} />
