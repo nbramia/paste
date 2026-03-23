@@ -2,7 +2,7 @@
 
 ## "No keyboard devices found" / Permission denied
 
-**Symptom:** Hotkeys don't work, error about `/dev/input/event*` access.
+**Symptom:** Global hotkeys (Super+V) and text expander don't work. Error about `/dev/input/event*` access in logs.
 
 **Fix:** Add your user to the `input` group:
 
@@ -16,9 +16,11 @@ Then **log out and back in** (or reboot). Verify:
 groups | grep input
 ```
 
+Note: The filmstrip can still be opened from the system tray menu without `input` group membership.
+
 ## ydotoold not running (Wayland text injection)
 
-**Symptom:** Text expansion or paste doesn't work on Wayland (GNOME, KDE).
+**Symptom:** Text expansion or paste doesn't work on Wayland (GNOME, KDE). Paste falls back to clipboard injection.
 
 **Fix:** Start the ydotool daemon:
 
@@ -53,7 +55,7 @@ Or set to `"auto"` (default) — Paste will detect the best available method.
 
 **Cause:** On Wayland, the clipboard is owned by the source application. When it exits, the clipboard is cleared.
 
-**Fix:** Paste automatically re-asserts clipboard content when this happens. If it's not working, ensure `wl-clipboard` is installed:
+**Fix:** Paste automatically captures clipboard content as it changes, so the content is preserved in history even if the source app closes. If clipboard persistence is not working, ensure `wl-clipboard` is installed:
 
 ```bash
 sudo apt install wl-clipboard
@@ -74,6 +76,8 @@ Then enable it in GNOME Extensions.
 
 **On Hyprland:** Ensure `waybar` is configured with a tray module.
 
+**On Sway:** Ensure your bar supports the StatusNotifierItem protocol.
+
 ## "xdotool not found" / "wl-paste not found"
 
 **Fix:** Install the missing package:
@@ -86,13 +90,48 @@ sudo apt install xdotool xclip
 sudo apt install wl-clipboard ydotool
 ```
 
+## Injector falls back to clipboard method
+
+**Symptom:** Log message says "Falling back to clipboard injector."
+
+**Cause:** The configured injection method was not available at startup.
+
+**Fix:** Install the appropriate tool for your display server:
+
+```bash
+# X11
+sudo apt install xdotool
+
+# Wayland (universal)
+sudo apt install ydotool
+sudo systemctl enable --now ydotoold
+
+# Wayland (wlroots only: Sway, Hyprland)
+sudo apt install wtype
+```
+
+Then set `[injection] method = "auto"` in config.toml and restart Paste.
+
 ## High CPU usage
 
 **Possible causes:**
-- Clipboard polling interval too aggressive (should be 500ms)
-- Retention not running (very large history)
+- Very large clipboard history with no retention limits set
+- Frequent clipboard changes from polling applications
 
-**Fix:** Run cleanup in Settings → Storage & Retention → "Run Cleanup Now".
+**Fix:** Run cleanup in Settings, or manually via the command:
+
+```bash
+# Check history size
+sqlite3 ~/.local/share/paste/paste.db "SELECT COUNT(*) FROM clips;"
+```
+
+Set retention limits in config.toml:
+
+```toml
+[storage]
+max_history_days = 90
+max_history_count = 10000
+```
 
 ## SQLite database corruption
 
@@ -106,6 +145,43 @@ sudo apt install wl-clipboard ydotool
 4. Restart Paste
 
 Note: This will clear your clipboard history. Pinboard items and snippets will be lost.
+
+If Paste cannot open the database, it automatically falls back to in-memory storage and logs the error. Check `~/.local/share/paste/paste.log` for details.
+
+## Checking Logs
+
+Paste logs to both stderr and a file:
+
+```bash
+# View the log file
+cat ~/.local/share/paste/paste.log
+
+# Watch live logs
+tail -f ~/.local/share/paste/paste.log
+
+# Run with debug logging
+RUST_LOG=debug paste
+```
+
+The log file is rotated at 5 MB.
+
+## Text expander not triggering
+
+**Possible causes:**
+1. Expander is disabled — check the system tray menu or Settings
+2. Not in `input` group — global keystroke monitoring requires it
+3. Trigger mode mismatch — if set to `word_boundary`, you need to type a space/punctuation after the abbreviation
+4. Abbreviation conflict — check if the abbreviation is too short or conflicts with common words
+
+**Fix:** Toggle the expander via Ctrl+Alt+Space. Verify your abbreviation is registered in the Snippets tab.
+
+## Overlay appears in wrong position
+
+**Symptom:** The filmstrip doesn't anchor to the bottom of the screen.
+
+**Cause:** Monitor detection may have picked the wrong monitor, or compositor-specific rules failed to apply.
+
+**Fix:** Check the log for overlay positioning messages. On Hyprland/Sway, ensure `hyprctl` or `swaymsg` is available in PATH.
 
 ## Build from source fails
 

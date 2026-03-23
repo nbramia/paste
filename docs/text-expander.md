@@ -126,3 +126,21 @@ Click "Import espanso" in the Snippets tab to import snippets from `~/.config/es
 | `{{date}}` | `%Y-%m-%d` |
 | `{{time}}` | `%H:%M:%S` |
 | `{{newline}}` | `\n` |
+
+Duplicate abbreviations are automatically skipped during import.
+
+## JSON Export/Import
+
+Export all snippets and groups to a JSON file for backup or transfer:
+
+- **Export**: Saves all snippets organized by group, including abbreviations, content, types, and descriptions
+- **Import**: Reads a previously exported JSON file. Duplicate abbreviations are skipped. Groups are created or matched by name.
+
+When importing, snippets containing `%shell(...)` macros are flagged with a warning since they execute arbitrary commands. Review imported script snippets before using them.
+
+## Tips for Abbreviations
+
+- **Use a prefix**: Starting all abbreviations with a symbol (`;`, `//`, `,,`) avoids accidental triggers. For example: `;sig`, `;date`, `;addr`.
+- **Keep them memorable**: `;sig` for signature, `;em` for email, `;ph` for phone.
+- **Avoid common words**: Don't use abbreviations that could appear in normal typing.
+- **Use word boundary mode**: The default trigger mode prevents false positives by requiring a space or punctuation after the abbreviation.

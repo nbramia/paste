@@ -2,7 +2,7 @@
 
 ## Global (via evdev)
 
-These work regardless of which application is focused.
+These work regardless of which application is focused. They require membership in the `input` group.
 
 | Shortcut | Action |
 |---|---|
@@ -12,19 +12,21 @@ These work regardless of which application is focused.
 | Ctrl+Alt+Space | Toggle text expander on/off |
 | Super+1-9 | Quick paste Nth most recent clip |
 
+All global hotkeys are configurable in `~/.config/paste/config.toml` under `[hotkeys]` (except Super+1-9).
+
 ## Filmstrip Navigation
 
 Active when the filmstrip is visible.
 
 | Shortcut | Action |
 |---|---|
-| ← → | Navigate between cards |
-| Enter | Paste selected clip (rich content) |
+| Left / Right | Navigate between cards |
+| Enter | Paste selected clip (rich content preserved) |
 | Shift+Enter | Paste as plain text (strip formatting) |
 | Space | Toggle Quick Look preview |
-| Escape | Close preview → clear search → dismiss |
+| Escape | Close preview, clear search, or dismiss filmstrip |
 | Del / Backspace | Remove selected clip from history |
-| Tab | Cycle views: History → Pinboards → Snippets |
+| Tab | Cycle views: History, Pinboards, Snippets |
 
 ## Search
 
@@ -38,9 +40,11 @@ Active when the filmstrip is visible.
 
 | Shortcut | Action |
 |---|---|
-| Ctrl+P | Save selected clip to pinboard |
-| Ctrl+E | Edit selected clip (text/code only) |
+| Ctrl+P | Save selected clip to pinboard (opens picker) |
+| Ctrl+E | Edit selected clip inline (text/code only) |
 | F | Toggle favorite on selected clip |
+| Ctrl+click | Add/remove clip from multi-selection |
+| Shift+click | Select range of clips |
 
 ## Quick Look Preview
 
@@ -49,7 +53,7 @@ Active when the filmstrip is visible.
 | Space | Open/close preview |
 | Escape | Close preview |
 
-## In Dialogs (editors, pickers)
+## In Dialogs (editors, fill-in fields, pickers)
 
 | Shortcut | Action |
 |---|---|
@@ -62,4 +66,4 @@ Active when the filmstrip is visible.
 Escape processes in this order:
 1. Close Quick Look preview (if open)
 2. Clear search (if active)
-3. Dismiss filmstrip overlay (when window management is wired)
+3. Dismiss filmstrip overlay

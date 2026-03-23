@@ -2,45 +2,65 @@
 
 macOS Paste-quality clipboard management with integrated text expansion, built natively for Linux.
 
+[Features](#features) · [Installation](#installation) · [Quick Start](#quick-start) · [User Guide](docs/user-guide.md) · [Configuration](docs/configuration.md)
+
+## Why Paste?
+
+Linux clipboard management is stuck in the early 2010s. CopyQ, GPaste, and Clipman are functional but visually basic. Meanwhile, macOS users enjoy **Paste** — a beautiful filmstrip of clipboard history — and **TextExpander** for text shortcuts. Linux has nothing that combines both.
+
+Paste brings that experience to Linux: a visual filmstrip overlay, pinboards for organizing clips, powerful search, a full text expander, and it works on both X11 and Wayland.
+
 ## Features
 
-- **Visual filmstrip** — Horizontal strip of rich content cards (text, code, links, images, files) with type-specific previews
-- **Pinboards** — Named, color-coded collections for organizing clips
-- **Full-text search** — FTS5-powered search with Power Search filters (type, app, date range)
-- **Paste Stack** — Sequential copy-then-paste workflow for batch content movement
-- **Text expander** — Type abbreviations that expand to full snippets with macros (date/time, clipboard, shell commands, fill-in fields, nested snippets)
-- **Quick Paste** — Super+1-9 to instantly paste recent clips without the filmstrip
+### Clipboard Manager
+- **Visual filmstrip** — Horizontal strip of rich content cards with type-specific previews (text, code, links, images, files)
+- **Full-text search** — FTS5-powered instant search with Power Search filters (type, app, date, favorites)
+- **Pinboards** — Named, color-coded collections for organizing frequently-used clips
+- **Quick Paste** — Super+1-9 to paste recent clips without opening the filmstrip
 - **Quick Look** — Space to preview full content of any clip
-- **System tray** — Persistent tray icon with context menu
-- **Light/dark mode** — Automatic system theme detection with manual override
-- **Works everywhere** — X11 and Wayland, GNOME/KDE/Hyprland/Sway
+- **Paste Stack** — Sequential copy-then-paste for batch workflows
+- **Multi-select** — Ctrl+click to select multiple clips, paste them concatenated
+- **Favorites** — Star clips for quick access (exempt from retention)
+- **Inline editing** — Ctrl+E to edit text clips before pasting
+- **Drag & drop** — Drag clips out to other apps, drop content in
+- **Rich paste** — Images paste as images, HTML preserves formatting
+- **Clipboard persistence** — Content survives source app closing on Wayland
+- **Smart dedup** — Growing text detection and rapid copy debounce
+
+### Text Expander
+- **Abbreviation triggers** — Type `;sig` + space to insert your full signature
+- **Date/time macros** — `%Y-%m-%d`, `%H:%M`, `%date(+5d)` for relative dates
+- **Dynamic content** — `%clipboard`, `%shell(command)`, `%snippet(abbr)` for nesting
+- **Fill-in fields** — `%fill(name)` triggers a dialog for dynamic content
+- **Snippet management** — Create, edit, organize in groups from the UI
+- **Import/export** — Import from espanso, export/import JSON for backup
+
+### Desktop Integration
+- **System tray** — Persistent icon with context menu
+- **Light/dark mode** — Follows system theme with manual override
+- **Autostart** — systemd user service for login startup
+- **Accessibility** — ARIA attributes, keyboard navigation, reduced motion support
+- **Works everywhere** — X11 and Wayland (Hyprland, Sway, GNOME, KDE)
 
 ## Installation
 
 ### Prerequisites
 
 ```bash
-# System dependencies (Ubuntu/Debian)
-sudo apt install \
-  libwebkit2gtk-4.1-0 \
-  libgtk-3-0 \
-  libayatana-appindicator3-1 \
-  wl-clipboard \
-  xdotool
+# Runtime dependencies (Ubuntu/Debian)
+sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1
+sudo apt install wl-clipboard xdotool
 
-# For text injection on Wayland (at least one required)
-sudo apt install ydotool  # Universal Wayland
-# or
-sudo apt install wtype    # wlroots only (Sway, Hyprland)
+# For Wayland text injection (at least one)
+sudo apt install ydotool  # universal
+sudo apt install wtype    # Sway/Hyprland only
 
-# Add your user to the input group (for global hotkeys)
+# Global hotkeys require input group membership
 sudo usermod -aG input $USER
-# Log out and back in for this to take effect
+# Log out and back in
 ```
 
-### From .deb package
-
-Download the latest `.deb` from [Releases](https://github.com/nbramia/paste/releases):
+### From .deb
 
 ```bash
 sudo dpkg -i paste_0.1.0_amd64.deb
@@ -48,25 +68,18 @@ sudo dpkg -i paste_0.1.0_amd64.deb
 
 ### From AppImage
 
-Download the `.AppImage` from [Releases](https://github.com/nbramia/paste/releases):
-
 ```bash
 chmod +x Paste_0.1.0_amd64.AppImage
 ./Paste_0.1.0_amd64.AppImage
 ```
 
-### From source
+### From Source
 
 ```bash
 # Build dependencies
-sudo apt install \
-  libwebkit2gtk-4.1-dev \
-  libgtk-3-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev \
-  libsoup-3.0-dev
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev \
+  libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev
 
-# Clone and build
 git clone https://github.com/nbramia/paste.git
 cd paste
 npm install
@@ -75,55 +88,47 @@ cargo tauri build
 
 ## Quick Start
 
-1. **Launch Paste** — run the app or enable autostart in Settings
-2. **Copy anything** — clipboard content is automatically captured
-3. **Press Super+V** — the filmstrip overlay appears at the bottom
-4. **Navigate** — use arrow keys to browse, Enter to paste
-5. **Search** — press `/` to search your clipboard history
-6. **Pin favorites** — press Ctrl+P to save clips to pinboards
+1. **Launch Paste** — run the binary or enable autostart in Settings
+2. **Copy anything** — text, code, URLs, images are captured automatically
+3. **Super+V** — open the filmstrip
+4. **Arrow keys + Enter** — navigate and paste
+5. **/** — search your history
+6. **Ctrl+P** — save clips to pinboards
+7. **;sig + space** — expand text snippets (create them in the Snippets tab)
 
 ## Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
 | Super+V | Toggle filmstrip |
-| Super+1-9 | Quick paste Nth recent clip |
-| ← → | Navigate between cards |
-| Enter | Paste selected clip |
-| Shift+Enter | Paste as plain text |
+| Super+1-9 | Quick paste Nth clip |
+| Left / Right | Navigate cards |
+| Enter | Paste |
+| Shift+Enter | Paste plain text |
 | Space | Quick Look preview |
-| / or Ctrl+F | Focus search |
+| / or Ctrl+F | Search |
 | F | Toggle favorite |
 | Ctrl+P | Save to pinboard |
 | Ctrl+E | Edit clip |
 | Del | Remove clip |
 | Tab | Cycle views |
-| Esc | Close preview/search |
+| Esc | Close |
 
-See [docs/keyboard-shortcuts.md](docs/keyboard-shortcuts.md) for the full reference.
+Full reference: [docs/keyboard-shortcuts.md](docs/keyboard-shortcuts.md)
 
 ## Configuration
 
-Config file at `~/.config/paste/config.toml`. Created automatically on first run.
+Config file: `~/.config/paste/config.toml` (auto-created on first run). All options are editable via the Settings UI.
 
-See [docs/configuration.md](docs/configuration.md) for the full reference.
+Full reference: [docs/configuration.md](docs/configuration.md)
 
-## Text Expander
+## Documentation
 
-Type abbreviations anywhere to expand them into full snippets:
-
-```
-;sig  →  Best regards,
-         John Smith
-
-;date →  2026-03-22
-
-;email → john@example.com
-```
-
-Supports macros: `%Y-%m-%d`, `%clipboard`, `%shell(command)`, `%fill(name)`, `%snippet(abbr)`.
-
-See [docs/text-expander.md](docs/text-expander.md) for the full syntax reference.
+- **[User Guide](docs/user-guide.md)** — Complete feature walkthrough
+- **[Configuration](docs/configuration.md)** — All config options
+- **[Text Expander](docs/text-expander.md)** — Snippet syntax reference
+- **[Keyboard Shortcuts](docs/keyboard-shortcuts.md)** — Full cheat sheet
+- **[Troubleshooting](docs/troubleshooting.md)** — Common issues & fixes
 
 ## Tech Stack
 
@@ -133,25 +138,19 @@ See [docs/text-expander.md](docs/text-expander.md) for the full syntax reference
 | Frontend | React 19 + TypeScript + TailwindCSS v4 |
 | Storage | SQLite with FTS5 full-text search |
 | Clipboard | wl-paste (Wayland) / XFixes (X11) |
-| Input | evdev (global hotkeys + keystroke monitoring) |
+| Input | evdev (global hotkeys + text expander) |
+| Injection | xdotool / ydotool / wtype |
 | Animations | Framer Motion |
 | Packaging | .deb, AppImage |
+| CI/CD | GitHub Actions |
 
 ## Development
 
 ```bash
 npm install
-cargo tauri dev
-```
-
-### Running tests
-
-```bash
-# Frontend tests
-npm test
-
-# Rust tests (requires system dependencies)
-cd src-tauri && cargo test
+cargo tauri dev    # dev mode with hot reload
+npm test           # frontend tests (Vitest)
+cd src-tauri && cargo test  # Rust tests
 ```
 
 ## License
