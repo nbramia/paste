@@ -8,7 +8,7 @@ All settings are also editable through the Settings UI (gear icon in the filmstr
 
 ```toml
 [hotkeys]
-toggle_overlay = "Super+V"           # Open/close the filmstrip
+toggle_overlay = "Super+Alt+V"       # Open/close the filmstrip (Cmd+Option+V with Toshy)
 paste_stack_mode = "Super+Shift+V"   # Toggle Paste Stack mode
 quick_copy_to_pinboard = "Super+Shift+C"  # Quick save to pinboard
 toggle_expander = "Ctrl+Alt+Space"   # Enable/disable text expander
@@ -27,6 +27,8 @@ max_content_size_mb = 10            # Skip items larger than this
 merge_growing = true                # Replace partial selections with complete ones
 debounce_ms = 500                   # Ignore rapid copies within this window (ms)
 ```
+
+**Clipboard backend:** Paste uses `xclip` via XWayland for clipboard polling. The original `wl-paste --watch` approach was replaced because it caused desktop side-effects (trash icon bouncing). Ensure `xclip` is installed: `sudo apt install xclip`.
 
 **Merge growing:** When enabled (default), if you progressively select more text (word, then line, then paragraph), Paste replaces the earlier partial clips with the latest, more complete selection instead of storing each as a separate entry.
 
@@ -105,7 +107,7 @@ For reference, this is the complete default configuration file:
 
 ```toml
 [hotkeys]
-toggle_overlay = "Super+V"
+toggle_overlay = "Super+Alt+V"
 paste_stack_mode = "Super+Shift+V"
 quick_copy_to_pinboard = "Super+Shift+C"
 toggle_expander = "Ctrl+Alt+Space"

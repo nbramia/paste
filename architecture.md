@@ -56,12 +56,12 @@ The primary development target is an AMD-based Linux workstation:
 | Frontend framework | React 19 + TailwindCSS v4 | Largest ecosystem, well-documented Tauri integration, Framer Motion for animations |
 | Animations | Framer Motion | Production-grade animation library, spring physics, layout animations |
 | Storage | SQLite via rusqlite 0.39 + FTS5 | Proven, lightweight, full-text search built-in, single-file database |
-| Clipboard (Wayland) | wl-clipboard (`wl-paste --watch`) | Event-driven, handles all MIME types, standard Wayland clipboard access |
+| Clipboard (Wayland) | xclip via XWayland (polling) | Replaced `wl-paste --watch` which caused desktop side-effects; image monitoring disabled |
 | Clipboard (X11) | x11rb crate + XFixes | Event-driven via `XFixesSelectSelectionInput`, no polling needed |
 | Global shortcuts | evdev crate | Kernel-level input, works on X11 + Wayland, no root needed (input group) |
 | Text injection | ydotool / xdotool / wtype | Covers all display servers and compositors |
 | System tray | Tauri built-in tray-icon | Uses Tauri v2's native tray icon support with menu builder API |
-| Overlay positioning | Tauri window API + compositor IPC | Positions window at bottom edge; applies Hyprland/Sway/X11 rules via CLI tools |
+| Overlay positioning | Tauri window API + compositor IPC | Disabled during development; window starts as normal decorated window |
 | Config | TOML | Rust-native, human-readable, well-typed |
 | Packaging | Tauri bundler | Generates .deb, .AppImage |
 | Build system | Cargo (Rust) + npm (frontend) | Standard tooling for both ecosystems |
@@ -97,17 +97,17 @@ A native toolkit would give us lighter resource usage and more native feel. Howe
 
 Captures clipboard changes on both X11 and Wayland with a unified interface.
 
-#### Wayland Implementation
+#### Wayland Implementation (xclip via XWayland)
 
 ```
-wl-paste --watch --type text cat     -> captures text clipboard changes
-wl-paste --watch --type image/png cat -> captures image clipboard changes
+xclip -selection clipboard -o        -> reads current clipboard text
 ```
 
-- Two `wl-paste --watch` subprocesses: one for text MIME types, one for image MIME types
-- stdout is piped to the Rust process for parsing and storage
-- Event-driven: `wl-paste` blocks until clipboard changes, then outputs the new content
-- Additional MIME types (text/html, text/uri-list) are read via separate `wl-paste --type <mime>` calls when a change is detected, to capture all representations of the copied content
+- Polling-based: a background thread periodically reads the clipboard via `xclip -selection clipboard -o` through XWayland
+- Content is hashed and compared against the last known hash; if changed, the new content is captured
+- **Image monitoring is disabled** — capturing image clipboard changes caused desktop side-effects (trash icon bouncing on GNOME) and was turned off
+- The original design used `wl-paste --watch` for event-driven monitoring, but this was replaced because `wl-paste` caused desktop side-effects on some compositors
+- Re-copying clips to the clipboard uses a `copy_to_clipboard` Tauri command that invokes `xclip -selection clipboard`
 
 #### X11 Implementation
 
@@ -475,7 +475,7 @@ Uses the `evdev` crate to capture global keyboard shortcuts regardless of focuse
 
 | Hotkey | Action | Configurable |
 |--------|--------|-------------|
-| Super+V | Toggle filmstrip overlay | Yes |
+| Super+Alt+V | Toggle filmstrip overlay (Cmd+Option+V with Toshy) | Yes |
 | Super+Shift+V | Toggle Paste Stack mode | Yes |
 | Super+Shift+C | Quick copy to pinboard | Yes |
 | Ctrl+Alt+Space | Toggle text expander on/off | Yes |
@@ -522,9 +522,11 @@ The injector falls back to clipboard injection if the configured method fails at
 | xdotool | `xdotool type --clearmodifiers` | X11 typing simulation |
 | ydotool | `ydotool type` | Wayland universal (requires ydotoold) |
 | wtype | `wtype` | wlroots compositors (Sway, Hyprland) |
-| clipboard | `wl-copy/xclip + key sim` | Fallback: set clipboard + Ctrl+V |
+| clipboard | `xclip + key sim` | Fallback: set clipboard + Ctrl+V |
 
 For paste operations from the filmstrip, clipboard injection is always used to preserve rich content (HTML, images).
+
+**ydotool backspace workaround:** ydotool's key codes for backspace were broken/inconsistent, so the text expander uses `xdotool` as a fallback for emitting backspace keystrokes when deleting abbreviations before expansion.
 
 ---
 
@@ -537,7 +539,7 @@ The original architecture planned to use the `ksni` crate for StatusNotifierItem
 #### Tray Menu
 
 ```
-Show Clipboard (Super+V)
+Show Clipboard (Super+Alt+V)
 ─────────────
 Paste Stack: OFF
 Text Expander: ON
@@ -593,8 +595,8 @@ The service is configured with `Restart=on-failure` and `RestartSec=5` for relia
 │  │   ├─ Hotkey matcher                               │
 │  │   └─ Text expander keystroke buffer               │
 │  │                                                   │
-│  ├─ Clipboard monitor thread                         │  <- Wayland: wl-paste subprocess
-│  │   └─ Content processing + dedup + storage         │     X11: XFixes event loop
+│  ├─ Clipboard monitor thread                         │  <- xclip polling via XWayland
+│  │   └─ Content processing + dedup + storage         │     (image monitoring disabled)
 │  │                                                   │
 │  ├─ Retention scheduler thread                       │  <- hourly cleanup
 │  │                                                   │
@@ -615,7 +617,7 @@ The service is configured with `Restart=on-failure` and `RestartSec=5` for relia
 |--------|---------|-------|
 | Main (Tauri) | Event loop, IPC, window management | Async runtime (tokio) |
 | Input daemon | evdev keyboard monitoring | Blocks on device read; 1 thread per device |
-| Clipboard monitor | Clipboard change detection | Blocks on wl-paste or XFixes |
+| Clipboard monitor | Clipboard change detection | Polls xclip via XWayland |
 | Retention scheduler | Periodic cleanup | Runs every hour after 5-second startup delay |
 | **Total** | **~4-6 threads** | Lightweight |
 
@@ -633,6 +635,7 @@ Frontend communicates with Rust backend via Tauri's command system. Key commands
 - `update_clip_content` — inline editing
 - `toggle_favorite` — star/unstar clips
 - `create_clip_from_text` — create clip from dropped content
+- `copy_to_clipboard` — re-copy clip content to clipboard via `xclip -selection clipboard`
 
 **Pinboards:**
 - `list_pinboards`, `create_pinboard`, `update_pinboard`, `delete_pinboard`
@@ -674,7 +677,7 @@ TOML config file at `~/.config/paste/config.toml`:
 
 ```toml
 [hotkeys]
-toggle_overlay = "Super+V"
+toggle_overlay = "Super+Alt+V"
 paste_stack_mode = "Super+Shift+V"
 quick_copy_to_pinboard = "Super+Shift+C"
 toggle_expander = "Ctrl+Alt+Space"
@@ -800,6 +803,7 @@ x11rb = { version = "0.13", features = ["xfixes"] }  # X11 clipboard
   "devDependencies": {
     "typescript": "^5.5",
     "@tauri-apps/cli": "^2",
+    "@tailwindcss/vite": "^4",
     "vite": "^6",
     "vitest": "^2",
     "@testing-library/react": "^16"
@@ -810,8 +814,8 @@ x11rb = { version = "0.13", features = ["xfixes"] }  # X11 clipboard
 ### System Packages
 
 ```bash
-# Text injection (at least one required)
-sudo apt install xdotool ydotool wtype wl-clipboard
+# Clipboard monitoring + text injection
+sudo apt install xclip xdotool ydotool wtype
 
 # WebView (usually pre-installed on modern Linux)
 sudo apt install libwebkit2gtk-4.1-0

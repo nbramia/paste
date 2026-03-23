@@ -2,7 +2,7 @@
 
 ## "No keyboard devices found" / Permission denied
 
-**Symptom:** Global hotkeys (Super+V) and text expander don't work. Error about `/dev/input/event*` access in logs.
+**Symptom:** Global hotkeys (Super+Alt+V) and text expander don't work. Error about `/dev/input/event*` access in logs.
 
 **Fix:** Add your user to the `input` group:
 
@@ -55,10 +55,10 @@ Or set to `"auto"` (default) — Paste will detect the best available method.
 
 **Cause:** On Wayland, the clipboard is owned by the source application. When it exits, the clipboard is cleared.
 
-**Fix:** Paste automatically captures clipboard content as it changes, so the content is preserved in history even if the source app closes. If clipboard persistence is not working, ensure `wl-clipboard` is installed:
+**Fix:** Paste automatically captures clipboard content as it changes, so the content is preserved in history even if the source app closes. If clipboard persistence is not working, ensure `xclip` is installed:
 
 ```bash
-sudo apt install wl-clipboard
+sudo apt install xclip
 ```
 
 ## System tray icon not visible
@@ -78,16 +78,16 @@ Then enable it in GNOME Extensions.
 
 **On Sway:** Ensure your bar supports the StatusNotifierItem protocol.
 
-## "xdotool not found" / "wl-paste not found"
+## "xdotool not found" / "xclip not found"
 
 **Fix:** Install the missing package:
 
 ```bash
-# For X11
+# Required for clipboard monitoring and text injection
 sudo apt install xdotool xclip
 
-# For Wayland
-sudo apt install wl-clipboard ydotool
+# For Wayland text injection (at least one)
+sudo apt install ydotool wtype
 ```
 
 ## Injector falls back to clipboard method
@@ -202,3 +202,59 @@ sudo apt install build-essential curl wget
 ```
 
 Ensure Rust is installed via [rustup](https://rustup.rs/) and Node.js 22+ is installed.
+
+## Trash icon bouncing on desktop (wl-paste side-effect)
+
+**Symptom:** When clipboard monitoring is active, a trash icon appears and bounces on the desktop, or other visual artifacts occur.
+
+**Cause:** The original `wl-paste --watch` approach caused desktop side-effects on some compositors (especially GNOME). Image clipboard monitoring was also a source of this behavior.
+
+**Fix:** This is already resolved — Paste now uses `xclip` polling via XWayland instead of `wl-paste --watch`. Image monitoring is disabled by default. If you still see this issue, ensure you're running the latest version.
+
+## Tailwind CSS styles not loading
+
+**Symptom:** The app renders with no styles — plain HTML with no colors, layout, or typography.
+
+**Cause:** Tailwind v4 requires the `@tailwindcss/vite` plugin. Without it, Tailwind styles are not processed.
+
+**Fix:** Install the Vite plugin:
+
+```bash
+cd /path/to/paste
+npm install -D @tailwindcss/vite
+```
+
+Ensure `vite.config.ts` includes the plugin:
+
+```ts
+import tailwindcss from "@tailwindcss/vite";
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  // ...
+});
+```
+
+Then restart `npx tauri dev`.
+
+## ydotool backspace keys not working (text expander)
+
+**Symptom:** Text expander triggers but doesn't delete the abbreviation before inserting the expansion, resulting in doubled text (abbreviation + expansion).
+
+**Cause:** ydotool's key codes for backspace were broken/inconsistent.
+
+**Fix:** This is already resolved — the text expander uses `xdotool` as a fallback for backspace key injection. Ensure `xdotool` is installed:
+
+```bash
+sudo apt install xdotool
+```
+
+## Development: `cargo tauri dev` not found
+
+**Symptom:** Running `cargo tauri dev` fails with "command not found" or similar.
+
+**Fix:** Use `npx tauri dev` instead of `cargo tauri dev`. The Tauri CLI is installed as an npm dev dependency, not a Cargo tool:
+
+```bash
+npx tauri dev
+```

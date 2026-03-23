@@ -49,7 +49,7 @@ Paste brings that experience to Linux: a visual filmstrip overlay, pinboards for
 ```bash
 # Runtime dependencies (Ubuntu/Debian)
 sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1
-sudo apt install wl-clipboard xdotool
+sudo apt install xclip xdotool
 
 # For Wayland text injection (at least one)
 sudo apt install ydotool  # universal
@@ -83,28 +83,34 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev \
 git clone https://github.com/nbramia/paste.git
 cd paste
 npm install
-cargo tauri build
+npm install -D @tailwindcss/vite    # Required for Tailwind v4
+npx tauri build
 ```
 
 ## Quick Start
 
 1. **Launch Paste** — run the binary or enable autostart in Settings
-2. **Copy anything** — text, code, URLs, images are captured automatically
-3. **Super+V** — open the filmstrip
+2. **Copy anything** — text, code, URLs are captured automatically
+3. **Super+Alt+V** — open the filmstrip (Cmd+Option+V on Mac keyboard with Toshy)
 4. **Arrow keys + Enter** — navigate and paste
-5. **/** — search your history
-6. **Ctrl+P** — save clips to pinboards
-7. **;sig + space** — expand text snippets (create them in the Snippets tab)
+5. **Double-click** a card to copy its content to clipboard
+6. **Right-click** a card for context menu: copy, save to pinboard, toggle favorite, delete
+7. **Mouse wheel** scrolls the filmstrip horizontally
+8. **/** — search your history
+9. **;sig + space** — expand text snippets (create them in the Snippets tab)
 
 ## Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
-| Super+V | Toggle filmstrip |
+| Super+Alt+V | Toggle filmstrip |
 | Super+1-9 | Quick paste Nth clip |
 | Left / Right | Navigate cards |
 | Enter | Paste |
 | Shift+Enter | Paste plain text |
+| Double-click | Copy to clipboard |
+| Right-click | Context menu (copy, pin, favorite, delete) |
+| Mouse wheel | Scroll filmstrip horizontally |
 | Space | Quick Look preview |
 | / or Ctrl+F | Search |
 | F | Toggle favorite |
@@ -137,7 +143,7 @@ Full reference: [docs/configuration.md](docs/configuration.md)
 | Backend | Rust (Tauri v2) |
 | Frontend | React 19 + TypeScript + TailwindCSS v4 |
 | Storage | SQLite with FTS5 full-text search |
-| Clipboard | wl-paste (Wayland) / XFixes (X11) |
+| Clipboard | xclip polling via XWayland (Wayland) / XFixes (X11) |
 | Input | evdev (global hotkeys + text expander) |
 | Injection | xdotool / ydotool / wtype |
 | Animations | Framer Motion |
@@ -148,10 +154,13 @@ Full reference: [docs/configuration.md](docs/configuration.md)
 
 ```bash
 npm install
-cargo tauri dev    # dev mode with hot reload
-npm test           # frontend tests (Vitest)
-cd src-tauri && cargo test  # Rust tests
+npm install -D @tailwindcss/vite    # Required — Tailwind v4 won't load without this
+npx tauri dev                       # dev mode with hot reload
+npm test                            # frontend tests (Vitest)
+cd src-tauri && cargo test          # Rust tests
 ```
+
+**Note:** The window starts as a normal decorated window during development (overlay positioning is disabled). The UI uses a warm gray + amber/gold palette with IBM Plex Sans headers and Public Sans body text.
 
 ## License
 

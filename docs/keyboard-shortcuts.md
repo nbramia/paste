@@ -6,7 +6,7 @@ These work regardless of which application is focused. They require membership i
 
 | Shortcut | Action |
 |---|---|
-| Super+V | Toggle filmstrip overlay |
+| Super+Alt+V | Toggle filmstrip overlay (Cmd+Option+V on Mac keyboard with Toshy) |
 | Super+Shift+V | Toggle Paste Stack mode |
 | Super+Shift+C | Quick copy to pinboard |
 | Ctrl+Alt+Space | Toggle text expander on/off |
@@ -23,6 +23,9 @@ Active when the filmstrip is visible.
 | Left / Right | Navigate between cards |
 | Enter | Paste selected clip (rich content preserved) |
 | Shift+Enter | Paste as plain text (strip formatting) |
+| Double-click | Copy clip content to clipboard (does not paste at cursor) |
+| Right-click | Context menu: copy, save to pinboard, toggle favorite, delete |
+| Mouse wheel | Scroll filmstrip horizontally (vertical wheel maps to horizontal scroll) |
 | Space | Toggle Quick Look preview |
 | Escape | Close preview, clear search, or dismiss filmstrip |
 | Del / Backspace | Remove selected clip from history |

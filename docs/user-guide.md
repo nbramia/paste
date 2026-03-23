@@ -60,7 +60,7 @@ You must **log out and back in** (or reboot) for this to take effect. Verify wit
 groups | grep input
 ```
 
-Without this, global hotkeys (Super+V) and the text expander will not work. The filmstrip can still be opened from the system tray menu.
+Without this, global hotkeys (Super+Alt+V) and the text expander will not work. The filmstrip can still be opened from the system tray menu.
 
 ### Wayland Text Injection
 
@@ -82,7 +82,9 @@ Paste monitors two clipboard selections:
 - **CLIPBOARD** — filled by Ctrl+C, right-click copy, etc. This is the primary selection most users interact with.
 - **PRIMARY** — filled by mouse text selection. Can be disabled in settings if unwanted.
 
-On Wayland, `wl-paste --watch` is used for event-driven monitoring. On X11, the XFixes extension provides selection change notifications. Neither approach uses polling.
+Clipboard monitoring uses **xclip via XWayland** for polling-based change detection. The original approach used `wl-paste --watch`, but this caused desktop side-effects (trash icon bouncing on GNOME). The xclip polling approach works reliably on both X11 and Wayland (via XWayland).
+
+**Note:** Image monitoring is currently disabled because it caused trash icon bouncing on the desktop. Text-only clipboard changes are captured.
 
 ### Content Types
 
@@ -117,7 +119,7 @@ excluded_apps = ["1password", "keepassxc", "bitwarden", "lastpass"]
 
 ## 3. The Filmstrip
 
-The filmstrip is the main UI. Press **Super+V** to toggle it.
+The filmstrip is the main UI. Press **Super+Alt+V** to toggle it (Cmd+Option+V on a Mac keyboard with Toshy).
 
 ### Layout
 
@@ -129,14 +131,21 @@ The filmstrip appears as a horizontal strip anchored to the bottom of your scree
 
 ### Navigation
 
-| Key | Action |
+| Key / Action | Behavior |
 |-----|--------|
 | Left / Right | Move between cards |
 | Enter | Paste the selected clip (rich content preserved) |
 | Shift+Enter | Paste as plain text (strip formatting) |
+| Double-click | Copy the clip's content to clipboard (does not paste at cursor) |
+| Right-click | Context menu: copy, save to pinboard, toggle favorite, delete |
+| Mouse wheel | Scrolls the filmstrip horizontally (vertical wheel maps to horizontal scroll) |
 | Space | Quick Look preview |
 | Tab | Cycle between History, Pinboards, and Snippets views |
 | Esc | Close preview, clear search, or dismiss the filmstrip |
+
+### Cards
+
+Cards have a fixed height (`h-44`) with overflow clipping — long content is truncated in the preview. Use Quick Look (Space) to see the full content.
 
 ### Card Types
 
@@ -148,14 +157,11 @@ Each card renders differently based on content type:
 - **Image cards** — show a thumbnail preview with dimensions in the footer
 - **File cards** — show a file icon, filename, and file size
 
-### Overlay Positioning
+### Window Behavior
 
-On **Wayland**, Paste applies compositor-specific window rules:
-- Hyprland: uses `hyprctl` to set float, pin, noborder, noshadow rules
-- Sway: uses `swaymsg` for floating, sticky, borderless rules
-- GNOME/KDE: standard window positioning with always-on-top
+During development, the window starts as a **normal decorated window** (overlay positioning is disabled). In production, compositor-specific rules will position it as a bottom-edge overlay.
 
-On **X11**, EWMH properties (`_NET_WM_WINDOW_TYPE_DOCK`, `_NET_WM_STATE_ABOVE`) are set for proper overlay behavior.
+The frontend listens for `clip-added` Tauri events from the backend to auto-refresh the history view when new clips are captured.
 
 ---
 
@@ -443,7 +449,7 @@ When triggered, a dialog appears with four fields: recipient (text), body (texta
 
 ### Creating Snippets
 
-1. Open the filmstrip (Super+V) and switch to the **Snippets** tab
+1. Open the filmstrip (Super+Alt+V) and switch to the **Snippets** tab
 2. Click the **+** button to create a new snippet
 3. Enter:
    - **Abbreviation** — the trigger text (e.g., `;sig`)
@@ -508,13 +514,13 @@ Use **Shift+Enter** to force plain text paste, stripping all formatting.
 
 On Wayland, the clipboard is owned by the source application. When that application closes, the clipboard content is lost — this is a well-known Wayland limitation.
 
-Paste solves this by capturing clipboard content as soon as it changes. Even if the source app closes, the content is preserved in Paste's history and can be re-pasted. With `wl-clipboard` installed, Paste can also re-assert the clipboard content when the source app exits.
+Paste solves this by capturing clipboard content as soon as it changes. Even if the source app closes, the content is preserved in Paste's history and can be re-copied. Re-copying uses a `copy_to_clipboard` Tauri command that invokes `xclip -selection clipboard` under the hood.
 
 ---
 
 ## 19. Settings
 
-Access Settings via the gear icon in the filmstrip or from the system tray menu.
+Access Settings via the **gear icon in the tab bar** or from the system tray menu.
 
 ### Appearance
 
@@ -526,7 +532,7 @@ Access Settings via the gear icon in the filmstrip or from the system tray menu.
 
 ### Hotkeys
 
-- **Toggle overlay** — default: Super+V
+- **Toggle overlay** — default: Super+Alt+V (Cmd+Option+V on Mac keyboard with Toshy)
 - **Paste Stack mode** — default: Super+Shift+V
 - **Quick copy to pinboard** — default: Super+Shift+C
 - **Toggle expander** — default: Ctrl+Alt+Space
@@ -595,7 +601,7 @@ Paste also respects the `prefers-reduced-motion` media query. When reduced motio
 
 Paste runs as a system tray application. The tray icon provides a context menu with:
 
-- **Show Clipboard (Super+V)** — open the filmstrip
+- **Show Clipboard (Super+Alt+V)** — open the filmstrip
 - **Paste Stack: OFF/ON** — toggle Paste Stack mode
 - **Text Expander: ON/OFF** — toggle the text expander
 - **Settings** — open the Settings panel
