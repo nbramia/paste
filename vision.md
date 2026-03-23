@@ -16,9 +16,9 @@ Meanwhile, macOS users have **Paste** — a beautiful horizontal filmstrip overl
 
 Text expansion is similarly fragmented. **espanso** exists on Linux and is capable, but it's a separate tool with its own config, its own daemon, and no integration with clipboard history. macOS users can combine Paste with TextExpander for a seamless workflow. Linux users cobble together multiple tools.
 
-There is no Linux equivalent that combines both. We're building it.
+There was no Linux equivalent that combined both. We built it.
 
-## What We're Building
+## What We Built
 
 A system tray application that:
 
@@ -26,7 +26,7 @@ A system tray application that:
 2. **Stores unlimited clipboard history** in a local SQLite database with full-text search
 3. **Presents a Paste-style filmstrip overlay** — a horizontal strip of rich content cards that slides up from the bottom of the screen on a global hotkey
 4. **Supports pinboards** — named, color-coded collections for organizing frequently-used snippets, templates, and references
-5. **Provides powerful search** — full-text, filterable by content type, source application, and date range
+5. **Provides powerful search** — full-text, filterable by content type, source application, date range, and favorites
 6. **Implements Paste Stack** — sequential copy-then-paste workflow for batch content movement
 7. **Integrates text expansion** — type an abbreviation anywhere, and it expands to a full snippet with support for fill-in fields, date/time macros, clipboard content, shell scripts, and nested snippets
 8. All data stays **local**, with **zero cloud dependency**
@@ -43,7 +43,7 @@ X11 and Wayland. GNOME, KDE, Hyprland, Sway, i3. The app works without configura
 
 ### 3. Instant Response
 
-The overlay appears in under 100ms. Search results filter as you type. Pasting an item happens instantly. Text expansion triggers without perceptible delay. Speed is a feature.
+The overlay appears in under 100ms from hotkey press. Search results filter as you type. Pasting an item happens instantly. Text expansion triggers without perceptible delay. Speed is a feature.
 
 ### 4. Local-First, Always
 
@@ -62,9 +62,9 @@ Power users navigate entirely by keyboard. But the filmstrip is also beautiful t
 ### Core Flow: Clipboard History
 
 ```
-[User copies anything] → Item captured → Stored with metadata
-[User presses Super+V] → Filmstrip overlay slides up from bottom
-[User browses/searches/selects] → Item pasted at cursor
+[User copies anything] -> Item captured -> Stored with metadata
+[User presses Super+V] -> Filmstrip overlay slides up from bottom
+[User browses/searches/selects] -> Item pasted at cursor
 [Overlay dismisses automatically]
 ```
 
@@ -92,11 +92,12 @@ Always-visible search bar at the top of the filmstrip. Typing filters results in
 - Content type (text, image, link, file, code)
 - Source application
 - Date range
+- Favorites
 - Pinboard
 
 ### Paste Stack
 
-Activate Paste Stack mode (dedicated shortcut). Everything you copy enters an ordered queue. When done collecting, each Ctrl+V pastes the next item in sequence. Items can be reordered or removed before pasting. Perfect for moving content between documents, filling forms, or assembling content from multiple sources.
+Activate Paste Stack mode (Super+Shift+V). Everything you copy enters an ordered queue. When done collecting, each Ctrl+V pastes the next item in sequence. Items can be reordered or removed before pasting. Perfect for moving content between documents, filling forms, or assembling content from multiple sources.
 
 ### Text Expander
 
@@ -105,7 +106,7 @@ Type a short abbreviation (e.g., `;sig`, `//date`, `,,addr`) anywhere in the sys
 Snippet capabilities:
 
 - **Plain text**: Simple replacement
-- **Date/time macros**: `%Y-%m-%d`, `%H:%M`, date math ("next Tuesday")
+- **Date/time macros**: `%Y-%m-%d`, `%H:%M`, date math (`%date(+5d)`)
 - **Clipboard content**: `%clipboard` inserts current clipboard
 - **Cursor positioning**: `%|` places cursor after expansion
 - **Fill-in fields**: Expansion triggers a form dialog for dynamic content
@@ -147,10 +148,10 @@ This is a lightweight application — no ML models, no inference engines. The re
 
 ## Non-Goals (For Now)
 
-- **Cloud sync** — local-only for v1; sync is a v2+ consideration
+- **Cloud sync** — local-only; sync is a future consideration
 - **Mobile companion** — desktop Linux only
 - **Rich text editing** — we display rich text, we don't provide a rich text editor
-- **OCR search** — searching text inside images is a v2 feature
+- **OCR search** — searching text inside images is a future feature
 - **Browser extension** — the global clipboard monitor captures browser copies already
 - **Windows/macOS** — Linux-only; Paste already exists on macOS
 
@@ -168,57 +169,66 @@ This is a lightweight application — no ML models, no inference engines. The re
 
 ## Roadmap
 
-### v0.1 — Core Clipboard Manager
+### v0.1 — Core Clipboard Manager ✅
 
-- Clipboard monitoring (X11 + Wayland)
-- SQLite storage with metadata
-- Basic filmstrip overlay (Tauri window)
-- Keyboard navigation and paste
-- System tray with basic menu
-- Global hotkey via evdev
+- ✅ Clipboard monitoring (X11 + Wayland)
+- ✅ SQLite storage with metadata
+- ✅ Basic filmstrip overlay (Tauri window)
+- ✅ Keyboard navigation and paste
+- ✅ System tray with basic menu
+- ✅ Global hotkey via evdev
 
-### v0.2 — Visual Polish & Organization
+### v0.2 — Visual Polish & Organization ✅
 
-- Rich content previews (images, links, code)
-- Pinboards (create, rename, color, drag-to-save)
-- Search with real-time filtering
-- Power Search filters (type, app, date)
-- Light/dark mode
-- Smooth animations and transitions
-- Quick Paste (hotkey + number)
+- ✅ Rich content previews (images, links, code)
+- ✅ Pinboards (create, rename, color, drag-to-save)
+- ✅ Search with real-time filtering
+- ✅ Power Search filters (type, app, date, favorites)
+- ✅ Light/dark mode
+- ✅ Smooth animations and transitions
+- ✅ Quick Paste (hotkey + number)
 
-### v0.3 — Text Expander
+### v0.3 — Text Expander ✅
 
-- Abbreviation monitoring via evdev
-- Plain text expansion
-- Date/time macros
-- Clipboard content macro
-- Cursor positioning
-- Snippet management UI in filmstrip
-- Import from espanso configs
+- ✅ Abbreviation monitoring via evdev
+- ✅ Plain text expansion
+- ✅ Date/time macros
+- ✅ Clipboard content macro
+- ✅ Cursor positioning
+- ✅ Snippet management UI in filmstrip
+- ✅ Import from espanso configs
 
-### v0.4 — Advanced Expander & UX
+### v0.4 — Advanced Expander & UX ✅
 
-- Fill-in field dialogs
-- Shell script snippets
-- Nested snippets
-- Snippet groups/organization
-- Paste Stack mode
-- Configurable retention policies
+- ✅ Fill-in field dialogs
+- ✅ Shell script snippets
+- ✅ Nested snippets
+- ✅ Snippet groups/organization
+- ✅ Paste Stack mode
+- ✅ Configurable retention policies
 
-### v1.0 — Release
+### v1.0 — Release ✅
 
-- Comprehensive keyboard shortcuts
-- Settings UI
-- Proper packaging (.deb, Flatpak, AUR, AppImage)
-- Documentation and onboarding
-- Performance optimization pass
-- Accessibility review
+- ✅ Comprehensive keyboard shortcuts
+- ✅ Settings UI
+- ✅ Proper packaging (.deb, AppImage)
+- ✅ Documentation and onboarding
+- ✅ Performance optimization pass
+- ✅ Accessibility review
 
-### v2.0 — Future
+### v2.0 — Future (Partially Complete)
 
-- OCR search in images
-- Cloud sync (optional, encrypted)
-- Context-aware paste suggestions
-- Snippet sharing/import/export
-- Multi-language snippet triggers
+- ✅ Snippet sharing/import/export (implemented: JSON export/import)
+- ✅ Smart deduplication (implemented: growing text detection, debounce)
+- ✅ Multi-item paste (implemented: Ctrl+click multi-select, concatenated paste)
+- ✅ Inline editing (implemented: Ctrl+E to edit text clips)
+- ✅ Drag and drop (implemented: drag clips out, drop content in)
+- ✅ Rich paste (implemented: HTML and image paste preservation)
+- ✅ Clipboard persistence (implemented: survives source app close on Wayland)
+- ✅ Autostart service (implemented: systemd user service)
+- ✅ Structured logging (implemented: file + stderr with rotation)
+- ✅ Database migrations (implemented: versioned schema with backup)
+- OCR search in images — not yet implemented
+- Cloud sync (optional, encrypted) — not yet implemented
+- Context-aware paste suggestions — not yet implemented
+- Multi-language snippet triggers — not yet implemented

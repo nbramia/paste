@@ -27,15 +27,21 @@ The primary development target is an AMD-based Linux workstation:
 │  └──────────────┘  └──────┬───────┘  │  ├─ History View        │   │
 │                           │          │  ├─ Pinboard View       │   │
 │  ┌──────────────┐         │          │  ├─ Snippet View        │   │
-│  │  Text         │←───────┤          │  └─ Search Bar          │   │
-│  │  Expander     │        │          └────────────┬────────────┘   │
-│  │  Engine       │        │                       │                 │
+│  │  Text         │←───────┤          │  ├─ Search Bar          │   │
+│  │  Expander     │        │          │  └─ Settings Panel      │   │
+│  │  Engine       │        │          └────────────┬────────────┘   │
 │  └──────┬───────┘        │                       │                 │
 │         │                │                       │                 │
 │  ┌──────▼───────┐  ┌─────▼────────┐  ┌──────────▼──────────┐      │
 │  │  Text         │  │  Hotkey      │  │  System Tray        │      │
-│  │  Injector     │  │  Daemon      │  │  (StatusNotifier)   │      │
+│  │  Injector     │  │  Daemon      │  │  (Tauri tray-icon)  │      │
 │  │  (xdo/ydo)   │  │  (evdev)     │  │                     │      │
+│  └──────────────┘  └──────────────┘  └─────────────────────┘      │
+│                                                                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌─────────────────────┐      │
+│  │  Overlay      │  │  Logging     │  │  Service            │      │
+│  │  Positioning  │  │  (file+      │  │  (systemd           │      │
+│  │  Module       │  │   stderr)    │  │   autostart)        │      │
 │  └──────────────┘  └──────────────┘  └─────────────────────┘      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -49,16 +55,16 @@ The primary development target is an AMD-based Linux workstation:
 | App framework | Tauri v2 | Lightweight (~5MB vs Electron's 100MB+), Rust backend, WebView frontend, built-in IPC |
 | Frontend framework | React 19 + TailwindCSS v4 | Largest ecosystem, well-documented Tauri integration, Framer Motion for animations |
 | Animations | Framer Motion | Production-grade animation library, spring physics, layout animations |
-| Storage | SQLite via rusqlite + FTS5 | Proven, lightweight, full-text search built-in, single-file database |
+| Storage | SQLite via rusqlite 0.39 + FTS5 | Proven, lightweight, full-text search built-in, single-file database |
 | Clipboard (Wayland) | wl-clipboard (`wl-paste --watch`) | Event-driven, handles all MIME types, standard Wayland clipboard access |
 | Clipboard (X11) | x11rb crate + XFixes | Event-driven via `XFixesSelectSelectionInput`, no polling needed |
 | Global shortcuts | evdev crate | Kernel-level input, works on X11 + Wayland, no root needed (input group) |
 | Text injection | ydotool / xdotool / wtype | Covers all display servers and compositors |
-| System tray | ksni crate | StatusNotifierItem protocol, works on KDE/GNOME/Hyprland/Sway |
-| Overlay positioning | gtk4-layer-shell (Wayland) / EWMH (X11) | Proper overlay/panel behavior on both display servers |
+| System tray | Tauri built-in tray-icon | Uses Tauri v2's native tray icon support with menu builder API |
+| Overlay positioning | Tauri window API + compositor IPC | Positions window at bottom edge; applies Hyprland/Sway/X11 rules via CLI tools |
 | Config | TOML | Rust-native, human-readable, well-typed |
-| Packaging | Tauri bundler | Generates .deb, .AppImage, .rpm |
-| Build system | Cargo (Rust) + npm/pnpm (frontend) | Standard tooling for both ecosystems |
+| Packaging | Tauri bundler | Generates .deb, .AppImage |
+| Build system | Cargo (Rust) + npm (frontend) | Standard tooling for both ecosystems |
 
 ### Why Tauri v2?
 
@@ -67,7 +73,7 @@ The primary development target is an AMD-based Linux workstation:
 - **Rich UI:** Web technologies enable the visually rich filmstrip UI that makes Paste special — animations, gradients, rich content previews, responsive layouts.
 - **IPC:** Tauri's command/event system provides type-safe communication between Rust backend and React frontend.
 - **Multi-window:** Supports creating additional windows for fill-in field dialogs, settings, etc.
-- **System tray:** Built-in system tray support (though we'll use ksni for better Linux integration).
+- **System tray:** Built-in tray icon support via the `tray-icon` feature, eliminating the need for a separate crate.
 
 ### Why Not GTK4/Qt6 Native?
 
@@ -94,8 +100,8 @@ Captures clipboard changes on both X11 and Wayland with a unified interface.
 #### Wayland Implementation
 
 ```
-wl-paste --watch --type text cat     → captures text clipboard changes
-wl-paste --watch --type image/png cat → captures image clipboard changes
+wl-paste --watch --type text cat     -> captures text clipboard changes
+wl-paste --watch --type image/png cat -> captures image clipboard changes
 ```
 
 - Two `wl-paste --watch` subprocesses: one for text MIME types, one for image MIME types
@@ -166,7 +172,11 @@ Code detection heuristic for text/plain: look for patterns like `{`, `=>`, `def 
 
 #### Deduplication
 
-Before storing, compute SHA-256 hash of the content. If the hash matches the most recent entry, skip storage (consecutive duplicate). This prevents "copy same thing twice" clutter without removing intentional re-copies after other content.
+The deduplication module (`clipboard/dedup.rs`) implements two strategies:
+
+1. **Hash-based dedup** — SHA-256 hash of the content. If the hash matches the most recent entry, the duplicate is skipped.
+2. **Growing text detection** — When `merge_growing` is enabled (default), if new content is a superset of the most recent clip (e.g., the user selected a word, then extended the selection to a paragraph), the older partial clip is replaced instead of creating a new entry.
+3. **Debounce** — Rapid consecutive copies within the debounce window (default 500ms) are collapsed.
 
 #### Application Exclusion
 
@@ -174,13 +184,15 @@ Certain applications should never have their clipboard content captured (passwor
 
 On X11: the source application's window class is available via `XGetClassHint` on the selection owner window.
 
-On Wayland: `wl-paste` doesn't expose the source application. We can use `xdg-desktop-portal` or compositor-specific DBus APIs to query the focused application. Alternatively, maintain a list of excluded applications and check the focused window via compositor-specific protocols.
+On Wayland: the focused application is queried via compositor-specific methods.
 
 Configuration:
 ```toml
 [clipboard]
-excluded_apps = ["1password", "keepassxc", "bitwarden"]
+excluded_apps = ["1password", "keepassxc", "bitwarden", "lastpass"]
 ```
+
+Exclusion list is managed at runtime via Tauri commands (`get_excluded_apps`, `add_excluded_app`, `remove_excluded_app`).
 
 ---
 
@@ -216,6 +228,8 @@ CREATE VIRTUAL TABLE clips_fts USING fts5(
     content='clips',
     content_rowid='rowid'
 );
+
+-- FTS5 sync triggers (auto-update index on insert/delete/update)
 
 -- Pinboards
 CREATE TABLE pinboards (
@@ -256,6 +270,12 @@ CREATE TABLE paste_stack (
     position INTEGER NOT NULL,
     created_at TEXT NOT NULL
 );
+
+-- Schema version tracking
+CREATE TABLE schema_version (
+    version INTEGER NOT NULL,
+    applied_at TEXT NOT NULL
+);
 ```
 
 #### Indexes
@@ -268,6 +288,17 @@ CREATE INDEX idx_clips_pinboard_id ON clips(pinboard_id);
 CREATE INDEX idx_clips_content_hash ON clips(content_hash);
 CREATE INDEX idx_snippets_abbreviation ON snippets(abbreviation);
 ```
+
+#### Migration System
+
+The storage module (`storage/migrations.rs`) implements a versioned migration system:
+
+- Migrations are sequential SQL scripts defined in code
+- The `schema_version` table tracks which migrations have been applied
+- On startup, `run_migrations()` checks the current version and runs any pending migrations
+- Each migration runs in a transaction and is rolled back on failure
+- Before migrating, the database file is backed up (e.g., `paste.v1.bak`)
+- The system is idempotent — running migrations on an up-to-date database is a no-op
 
 #### Image Storage
 
@@ -287,40 +318,45 @@ max_image_size_mb = 10         # Skip images larger than this
 max_total_storage_mb = 500     # Total storage cap including images
 ```
 
-Pinboard items are exempt from retention policy (they persist indefinitely).
+Pinboard items and favorites are exempt from retention policy (they persist indefinitely).
+
+Retention is enforced on startup (after a 5-second delay), then periodically every hour via a background scheduler thread.
+
+#### Storage Statistics
+
+The `get_storage_stats` command provides runtime statistics: total clip count, total storage size, and database file size. Displayed in the Settings UI.
 
 ---
 
 ### 3. Filmstrip Overlay (Tauri + React)
 
-The primary UI — a horizontal filmstrip that slides up from the bottom of the screen.
+The primary UI — a horizontal filmstrip anchored to the bottom of the screen.
 
 #### Window Behavior
 
-**Wayland:** Use `gtk4-layer-shell` via Tauri plugin to create a layer surface anchored to the bottom edge of the screen. This provides:
-- Overlay-level rendering (above normal windows, below notifications)
-- No focus stealing from the active application
-- Proper multi-monitor awareness (appears on the monitor with the focused window)
-- Keyboard grab for navigation while open
+The overlay module (`overlay.rs`) positions the Tauri window using the Tauri window API:
 
-**X11:** Use EWMH window properties:
-- `_NET_WM_WINDOW_TYPE_DOCK` or `_NET_WM_WINDOW_TYPE_DIALOG`
-- `_NET_WM_STATE_ABOVE` for always-on-top
-- Position at bottom of active monitor
-- Use `XGrabKeyboard` for keyboard capture while open
+1. Detect the current monitor (or primary monitor as fallback)
+2. Calculate position: full monitor width, anchored to bottom edge
+3. Set window size and position via `PhysicalSize` and `PhysicalPosition`
+4. Apply compositor-specific rules for overlay behavior
 
-#### Window Properties
+**Wayland compositors:**
+- **Hyprland**: Uses `hyprctl keyword windowrulev2` to set float, pin, noborder, noshadow, noanim rules by window title
+- **Sway**: Uses `swaymsg for_window` to set floating, sticky, borderless rules by window title
+- **GNOME/KDE**: Standard window positioning with always-on-top hints
 
-- **Width:** Full screen width (or configurable percentage)
-- **Height:** Resizable by dragging top edge (default: ~300px, showing 6-8 cards)
-- **Background:** Semi-transparent with blur (compositor-dependent; fallback to solid dark/light)
-- **Animation:** Slide up from bottom edge (200ms ease-out) on show, slide down on dismiss
+**X11:** Uses `xprop` to set EWMH properties:
+- `_NET_WM_WINDOW_TYPE_DOCK` for panel behavior
+- `_NET_WM_STATE_ABOVE, _NET_WM_STATE_STICKY` for always-on-top across workspaces
+
+This approach replaced the originally planned `gtk4-layer-shell` approach, using compositor IPC instead for broader compatibility.
 
 #### Filmstrip Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  [Search 🔍] [History] [Pinboards ▾] [Snippets]    [⚙️]       │
+│  [Search] [History] [Pinboards] [Snippets]              [gear] │
 ├─────────────────────────────────────────────────────────────────┤
 │ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │
 │ │         │ │         │ │         │ │         │ │         │  │
@@ -331,7 +367,6 @@ The primary UI — a horizontal filmstrip that slides up from the bottom of the 
 │ │ Chrome  │ │ VS Code │ │ Slack   │ │ Firefox │ │ Term    │  │
 │ │ 2m ago  │ │ 5m ago  │ │ 12m ago │ │ 1h ago  │ │ 2h ago  │  │
 │ └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘  │
-│                                                         ◀──── │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -349,22 +384,6 @@ Each card renders based on content type:
 | Rich Text | Rendered HTML preview (sanitized) |
 
 Card footer shows: source app icon + name, relative timestamp, content type color indicator.
-
-#### Keyboard Navigation
-
-| Key | Action |
-|-----|--------|
-| ← → | Navigate between cards |
-| Enter | Paste selected item and dismiss |
-| Shift+Enter | Paste as plain text |
-| Space | Toggle full preview of selected card |
-| / or Ctrl+F | Focus search bar |
-| Ctrl+F (again) | Toggle Power Search filters |
-| Tab | Cycle between History / Pinboards / Snippets |
-| Ctrl+P | Save selected item to pinboard (shows pinboard picker) |
-| Delete / Backspace | Remove selected item from history |
-| Escape | Dismiss overlay |
-| 1-9 (with modifier) | Quick paste Nth item |
 
 #### Search Architecture
 
@@ -385,6 +404,7 @@ WHERE clips_fts MATCH ?
   AND (?2 IS NULL OR c.source_app = ?2)
   AND (?3 IS NULL OR c.created_at >= ?3)
   AND (?4 IS NULL OR c.created_at <= ?4)
+  AND (?5 IS NULL OR c.is_favorite = TRUE)
 ORDER BY rank;
 ```
 
@@ -396,29 +416,23 @@ Search is debounced (100ms) on the frontend to avoid excessive queries during ty
 
 Background service that monitors keystrokes and expands abbreviations.
 
+#### Architecture
+
+The text expander is split across several modules:
+
+- `expander/buffer.rs` — Rolling character buffer for keystroke accumulation
+- `expander/keymap.rs` — evdev keycode to character mapping
+- `expander/matcher.rs` — Abbreviation matching algorithm
+- `expander/engine.rs` — Orchestration: buffer + matcher + injection
+- `expander/template.rs` — Template parsing and macro evaluation
+- `expander/import.rs` — espanso YAML import
+- `expander/export.rs` — JSON export/import
+
 #### Keystroke Monitoring
 
-```rust
-// Uses evdev crate — same as linux-whisper's hotkey daemon
-// Reads from /dev/input/event* devices
-// User must be in the 'input' group
+Uses the evdev crate to read from `/dev/input/event*` devices. User must be in the `input` group.
 
-fn monitor_keystrokes(tx: Sender<KeyEvent>) -> Result<()> {
-    let devices = evdev::enumerate()
-        .filter(|(_, d)| d.supported_keys().map_or(false, |k| k.contains(Key::KEY_A)));
-
-    for (_, device) in devices {
-        // Spawn a thread per keyboard device
-        thread::spawn(move || {
-            for event in device.fetch_events()? {
-                if event.event_type() == EventType::KEY {
-                    tx.send(KeyEvent::from(event))?;
-                }
-            }
-        });
-    }
-}
-```
+The hotkey daemon and text expander share the same evdev connection — a single thread per keyboard device reads all events and dispatches them to both the hotkey matcher and the abbreviation buffer.
 
 #### Abbreviation Matching
 
@@ -430,19 +444,7 @@ Maintains a rolling character buffer (max 100 chars). On each keystroke:
    a. Emit backspace keystrokes to delete the abbreviation (N backspaces for N-char abbreviation)
    b. Evaluate the snippet template (resolve macros, scripts, etc.)
    c. Inject the expanded text via text injector
-4. Reset buffer on word boundary (space, enter, tab) or after a configurable timeout
-
-#### Word Boundary Detection
-
-Abbreviations only trigger at word boundaries to prevent false positives. A character is a word boundary if it's a space, tab, newline, or punctuation character. The abbreviation must be preceded by a word boundary (or be at the start of input) and followed by a trigger character (typically space, tab, enter, or punctuation).
-
-Configurable trigger behavior:
-```toml
-[expander]
-trigger = "word_boundary"  # word_boundary | immediate
-# word_boundary: triggers when abbreviation is followed by space/punctuation
-# immediate: triggers as soon as abbreviation is typed (careful with false positives)
-```
+4. Reset buffer on word boundary or after a configurable timeout
 
 #### Template Evaluation
 
@@ -455,64 +457,13 @@ enum TemplateToken {
     CursorPosition,              // %|
     ShellCommand(String),        // %shell(command)
     NestedSnippet(String),       // %snippet(abbreviation)
-    FillIn(FillInSpec),          // %fill(name:type:default)
-}
-
-fn evaluate_template(template: &str, ctx: &ExpansionContext) -> Result<ExpansionResult> {
-    let tokens = parse_template(template)?;
-    let mut output = String::new();
-    let mut cursor_pos: Option<usize> = None;
-    let mut fill_ins: Vec<FillInSpec> = vec![];
-
-    for token in tokens {
-        match token {
-            TemplateToken::Literal(s) => output.push_str(&s),
-            TemplateToken::DateFormat(fmt) => output.push_str(&chrono::Local::now().format(&fmt).to_string()),
-            TemplateToken::Clipboard => output.push_str(&ctx.clipboard_content),
-            TemplateToken::CursorPosition => cursor_pos = Some(output.len()),
-            TemplateToken::ShellCommand(cmd) => {
-                let result = Command::new("sh").arg("-c").arg(&cmd).output()?;
-                output.push_str(&String::from_utf8_lossy(&result.stdout).trim());
-            }
-            TemplateToken::NestedSnippet(abbr) => {
-                let nested = ctx.db.get_snippet_by_abbreviation(&abbr)?;
-                let result = evaluate_template(&nested.content, ctx)?;
-                output.push_str(&result.text);
-            }
-            TemplateToken::FillIn(spec) => fill_ins.push(spec),
-            _ => {}
-        }
-    }
-
-    Ok(ExpansionResult { text: output, cursor_pos, fill_ins })
+    FillIn(FillInSpec),          // %fill(name), %fillarea(name), %fillpopup(name:opt1:opt2)
 }
 ```
 
-#### Fill-in Fields
+Fill-in fields are extracted before expansion. When present, a Tauri dialog window appears for the user to provide values before the text is inserted.
 
-When a snippet contains fill-in fields, a Tauri dialog window appears:
-
-```
-┌─────────────────────────────────────────┐
-│  Expand: Email Reply Template           │
-├─────────────────────────────────────────┤
-│                                         │
-│  Recipient Name: [_________________]    │
-│                                         │
-│  Tone: [Professional ▾]                │
-│         Professional                    │
-│         Casual                          │
-│         Formal                          │
-│                                         │
-│  Additional context:                    │
-│  [________________________________]     │
-│  [________________________________]     │
-│                                         │
-│            [Cancel]  [Expand]           │
-└─────────────────────────────────────────┘
-```
-
-The dialog is a separate Tauri window, created on-demand and destroyed after use.
+The `ExpansionContext` carries shared state across nested evaluations: clipboard content, fill-in values, and recursion depth tracking (max 10).
 
 ---
 
@@ -525,43 +476,16 @@ Uses the `evdev` crate to capture global keyboard shortcuts regardless of focuse
 | Hotkey | Action | Configurable |
 |--------|--------|-------------|
 | Super+V | Toggle filmstrip overlay | Yes |
-| Super+Shift+V | Toggle filmstrip in Paste Stack mode | Yes |
+| Super+Shift+V | Toggle Paste Stack mode | Yes |
 | Super+Shift+C | Quick copy to pinboard | Yes |
 | Ctrl+Alt+Space | Toggle text expander on/off | Yes |
+| Super+1-9 | Quick paste Nth item | No |
 
 #### Implementation
 
-Same approach as linux-whisper: read from `/dev/input/event*` devices via evdev. Detect key combinations by tracking modifier state. Emit events to the main application via channels.
+Reads from `/dev/input/event*` devices via evdev. Detects key combinations by tracking modifier state. Emits events to the main application via channels.
 
-The hotkey daemon and text expander keystroke monitor share the same evdev connection — a single thread reads all keyboard events and dispatches them to both the hotkey matcher and the abbreviation buffer.
-
-```rust
-fn input_daemon(hotkey_tx: Sender<HotkeyEvent>, keystroke_tx: Sender<KeyEvent>) {
-    let devices = evdev::enumerate()
-        .filter(|(_, d)| is_keyboard(d));
-
-    for (_, device) in devices {
-        thread::spawn(move || {
-            let mut modifier_state = ModifierState::default();
-            for event in device.fetch_events()? {
-                if event.event_type() == EventType::KEY {
-                    modifier_state.update(&event);
-
-                    // Check hotkey combinations
-                    if let Some(hotkey) = check_hotkey(&event, &modifier_state) {
-                        hotkey_tx.send(hotkey)?;
-                    }
-
-                    // Forward character keystrokes to text expander
-                    if let Some(ch) = event_to_char(&event, &modifier_state) {
-                        keystroke_tx.send(KeyEvent { char: ch, .. })?;
-                    }
-                }
-            }
-        });
-    }
-}
-```
+The daemon (`hotkey/daemon.rs`) spawns one thread per keyboard device. The `hotkey/keys.rs` module handles keycode-to-key mapping and modifier state tracking.
 
 ---
 
@@ -572,156 +496,117 @@ Injects expanded text or clipboard content at the current cursor position.
 #### Strategy Selection
 
 ```rust
-fn select_injector() -> Box<dyn TextInjector> {
-    let display = detect_display_server();
-    match display {
-        DisplayServer::Wayland => {
-            if compositor_is_wlroots() {
-                Box::new(WtypeInjector)       // wlroots: Sway, Hyprland
-            } else {
-                Box::new(YdotoolInjector)     // GNOME, KDE, others
-            }
-        }
-        DisplayServer::X11 => Box::new(XdotoolInjector),
+fn select_injector(method: &str) -> Result<Arc<dyn Injector>> {
+    match method {
+        "auto" => { /* detect display server and available tools */ }
+        "xdotool" => { /* X11 */ }
+        "ydotool" => { /* Wayland universal */ }
+        "wtype" => { /* wlroots only */ }
+        "clipboard" => { /* fallback: set clipboard + Ctrl+V */ }
     }
 }
 ```
 
+The `Injector` trait provides two methods:
+
+- `inject_text(&self, text: &str)` — typing simulation for text expansion
+- `inject_via_clipboard(&self, text: &str)` — clipboard injection for paste operations
+- `inject_rich(&self, content: &RichContent)` — rich paste preserving HTML/images
+
+The injector falls back to clipboard injection if the configured method fails at initialization.
+
 #### Injection Methods
 
-**xdotool (X11):**
-```bash
-xdotool type --clearmodifiers -- "$text"
-```
+| Method | Tool | Use Case |
+|--------|------|----------|
+| xdotool | `xdotool type --clearmodifiers` | X11 typing simulation |
+| ydotool | `ydotool type` | Wayland universal (requires ydotoold) |
+| wtype | `wtype` | wlroots compositors (Sway, Hyprland) |
+| clipboard | `wl-copy/xclip + key sim` | Fallback: set clipboard + Ctrl+V |
 
-**ydotool (Wayland — universal):**
-```bash
-ydotool type -- "$text"
-```
-Requires `ydotoold` daemon running with uinput access.
-
-**wtype (Wayland — wlroots only):**
-```bash
-wtype -- "$text"
-```
-No daemon needed, but only works on wlroots compositors (Sway, Hyprland, etc.).
-
-**Clipboard injection fallback:**
-```bash
-# Save current clipboard
-old_clip=$(wl-paste)
-# Set clipboard to new content
-echo -n "$text" | wl-copy
-# Simulate Ctrl+V
-ydotool key ctrl+v
-# Restore clipboard after delay
-sleep 0.1 && echo -n "$old_clip" | wl-copy
-```
-
-#### For Paste Operations (from filmstrip)
-
-When pasting from the filmstrip, we use clipboard injection rather than typing simulation:
-1. Set the clipboard to the selected item's content (including rich formats if available)
-2. Simulate Ctrl+V
-3. This preserves rich text, images, and other non-text content
-
-For text expansion, we use typing simulation (xdotool/ydotool/wtype) for better reliability with plain text.
+For paste operations from the filmstrip, clipboard injection is always used to preserve rich content (HTML, images).
 
 ---
 
 ### 7. System Tray
 
-**Crate:** `ksni` for StatusNotifierItem protocol (DBus-based).
+Uses **Tauri v2's built-in tray icon** support (`tauri::tray::TrayIconBuilder`).
+
+The original architecture planned to use the `ksni` crate for StatusNotifierItem. In practice, Tauri's built-in tray support was sufficient and simpler to integrate — it uses the same underlying AppIndicator/StatusNotifier protocols on Linux.
 
 #### Tray Menu
 
 ```
-📋 Paste
-├── History (5,234 items)
-├── ─────────────
-├── Paste Stack: OFF
-├── Text Expander: ON
-├── ─────────────
-├── Search... (Super+V)
-├── Quick Paste → [submenu with last 5 items]
-├── ─────────────
-├── Pinboards → [submenu listing pinboards]
-├── ─────────────
-├── Settings
-├── About
-└── Quit
+Show Clipboard (Super+V)
+─────────────
+Paste Stack: OFF
+Text Expander: ON
+─────────────
+Settings
+About Paste
+─────────────
+Quit
 ```
 
-#### Tray Icon States
-
-| State | Icon | When |
-|-------|------|------|
-| Normal | 📋 clipboard icon | Default idle state |
-| Paste Stack Active | 📋 with stack indicator | Paste Stack mode is on |
-| Expander Disabled | 📋 with X overlay | Text expander is paused |
+Menu events are handled via Tauri's event system: each menu item emits a Tauri event that the frontend or backend can listen to.
 
 ---
 
-### 8. Overlay Positioning
+### 8. Logging Module
 
-The filmstrip overlay must appear at the bottom of the screen, above other windows but below notifications.
+The logging module (`logging.rs`) provides structured logging with dual output:
 
-#### Wayland: Layer Shell
+- **stderr** — for development and terminal debugging
+- **File** — `~/.local/share/paste/paste.log` for production debugging
 
-The `wlr-layer-shell` protocol (and its standardized successor `ext-layer-shell-v1`) allows creating surfaces that are anchored to screen edges, similar to panels and docks.
+Features:
+- Reads `RUST_LOG` environment variable for level control (default: `info`)
+- Timestamps in local time with millisecond precision
+- Log file rotation at 5 MB (old log moved to `paste.log.old`)
+- Uses `env_logger` with a custom formatter that writes to both outputs
 
-```rust
-// Via gtk4-layer-shell bindings
-layer_surface.set_layer(Layer::Overlay);
-layer_surface.set_anchor(Edge::Bottom | Edge::Left | Edge::Right);
-layer_surface.set_size(0, filmstrip_height); // full width, configured height
-layer_surface.set_keyboard_mode(KeyboardMode::OnDemand);
-```
+---
 
-Supported compositors: Sway, Hyprland, and all wlroots-based compositors natively. Mutter (GNOME) has partial support via `ext-layer-shell-v1` as of GNOME 46+. KWin (KDE) supports `wlr-layer-shell` as of Plasma 6.
+### 9. Service Module
 
-**Fallback for unsupported compositors:** Use a regular window positioned at the bottom of the screen with `_NET_WM_STATE_ABOVE` equivalent hints. Less precise but functional.
+The service module (`service.rs`) manages systemd user service integration:
 
-#### X11: EWMH
+- **Install**: Creates `~/.config/systemd/user/paste.service` and `~/.local/share/applications/paste.desktop`
+- **Enable**: Runs `systemctl --user enable paste.service`
+- **Uninstall**: Stops, disables, and removes the service file and desktop entry
+- **Status check**: Verifies if the service file exists
 
-```rust
-// Window properties for overlay behavior
-set_property(window, "_NET_WM_WINDOW_TYPE", &[TYPE_DOCK]);
-set_property(window, "_NET_WM_STATE", &[STATE_ABOVE, STATE_STICKY]);
-set_property(window, "_NET_WM_STRUT_PARTIAL", &strut); // reserve screen space
-```
-
-Position the window at the bottom of the active monitor. Use `_NET_ACTIVE_WINDOW` to determine which monitor has the focused window.
+The service is configured with `Restart=on-failure` and `RestartSec=5` for reliability.
 
 ---
 
 ## Process Architecture
 
 ```
-┌──────────────────────────────────────────────────┐
-│              Main Process (Rust/Tauri)            │
-│                                                    │
-│  ├─ Main thread (Tauri event loop)               │
-│  │   └─ WebView management, IPC dispatch          │
-│  │                                                │
-│  ├─ Input daemon thread (evdev)                   │  ← reads keyboard events
-│  │   ├─ Hotkey matcher                            │
-│  │   └─ Text expander keystroke buffer            │
-│  │                                                │
-│  ├─ Clipboard monitor thread                      │  ← Wayland: wl-paste subprocess
-│  │   └─ Content processing + storage              │     X11: XFixes event loop
-│  │                                                │
-│  ├─ System tray thread (ksni)                     │  ← DBus StatusNotifierItem
-│  │                                                │
-│  └─ Database connection pool (rusqlite)            │  ← shared across threads
-│                                                    │
-│  WebView (React App)                               │
-│  ├─ Filmstrip component                           │
-│  ├─ Search component                              │
-│  ├─ Pinboard manager                              │
-│  ├─ Snippet manager                               │
-│  └─ Settings panel                                │
-└──────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│              Main Process (Rust/Tauri)                │
+│                                                      │
+│  ├─ Main thread (Tauri event loop)                   │
+│  │   └─ WebView management, IPC dispatch             │
+│  │                                                   │
+│  ├─ Input daemon thread (evdev)                      │  <- reads keyboard events
+│  │   ├─ Hotkey matcher                               │
+│  │   └─ Text expander keystroke buffer               │
+│  │                                                   │
+│  ├─ Clipboard monitor thread                         │  <- Wayland: wl-paste subprocess
+│  │   └─ Content processing + dedup + storage         │     X11: XFixes event loop
+│  │                                                   │
+│  ├─ Retention scheduler thread                       │  <- hourly cleanup
+│  │                                                   │
+│  └─ Database (rusqlite + Mutex)                      │  <- shared across threads
+│                                                      │
+│  WebView (React App)                                 │
+│  ├─ Filmstrip component                              │
+│  ├─ Search component                                 │
+│  ├─ Pinboard manager                                 │
+│  ├─ Snippet manager                                  │
+│  └─ Settings panel                                   │
+└──────────────────────────────────────────────────────┘
 ```
 
 ### Thread Allocation
@@ -729,44 +614,56 @@ Position the window at the bottom of the active monitor. Use `_NET_ACTIVE_WINDOW
 | Thread | Purpose | Notes |
 |--------|---------|-------|
 | Main (Tauri) | Event loop, IPC, window management | Async runtime (tokio) |
-| Input daemon | evdev keyboard monitoring | Blocks on device read |
+| Input daemon | evdev keyboard monitoring | Blocks on device read; 1 thread per device |
 | Clipboard monitor | Clipboard change detection | Blocks on wl-paste or XFixes |
-| System tray | StatusNotifierItem DBus | ksni event loop |
-| DB pool | SQLite operations | Via r2d2 connection pool or direct mutex |
-| **Total** | **~4-5 threads** | Lightweight |
+| Retention scheduler | Periodic cleanup | Runs every hour after 5-second startup delay |
+| **Total** | **~4-6 threads** | Lightweight |
 
 ### IPC (Tauri Commands)
 
-Frontend communicates with Rust backend via Tauri's command system:
+Frontend communicates with Rust backend via Tauri's command system. Key commands:
 
-```rust
-#[tauri::command]
-async fn get_clips(
-    offset: usize,
-    limit: usize,
-    search: Option<String>,
-    content_type: Option<String>,
-    source_app: Option<String>,
-    pinboard_id: Option<String>,
-) -> Result<Vec<Clip>, String> { ... }
+**Clipboard:**
+- `get_clips` — paginated history with filters (type, app, pinboard, favorites)
+- `search_clips` — FTS5 search with Power Search filters
+- `paste_clip` — rich paste (HTML + images preserved)
+- `paste_clip_plain` — plain text paste (strip formatting)
+- `paste_clips_multi` — concatenated multi-clip paste
+- `delete_clip` — remove clip from history
+- `update_clip_content` — inline editing
+- `toggle_favorite` — star/unstar clips
+- `create_clip_from_text` — create clip from dropped content
 
-#[tauri::command]
-async fn paste_clip(id: String) -> Result<(), String> { ... }
+**Pinboards:**
+- `list_pinboards`, `create_pinboard`, `update_pinboard`, `delete_pinboard`
+- `add_clip_to_pinboard`, `remove_clip_from_pinboard`
 
-#[tauri::command]
-async fn create_pinboard(name: String, color: String) -> Result<Pinboard, String> { ... }
+**Paste Stack:**
+- `toggle_paste_stack`, `get_paste_stack`, `get_paste_stack_status`
+- `add_to_paste_stack`, `pop_paste_stack`, `remove_from_paste_stack`
+- `reorder_paste_stack`, `clear_paste_stack`
 
-#[tauri::command]
-async fn save_snippet(snippet: SnippetInput) -> Result<Snippet, String> { ... }
+**Snippets:**
+- `list_snippets`, `create_snippet`, `update_snippet`, `delete_snippet`
+- `list_snippet_groups`, `create_snippet_group`, `delete_snippet_group`
+- `get_fill_in_fields`, `expand_with_fill_ins`
+- `preview_espanso_import`, `import_espanso`
+- `export_snippets`, `import_snippets_json`
 
-#[tauri::command]
-async fn toggle_paste_stack() -> Result<bool, String> { ... }
-```
+**Settings & Maintenance:**
+- `get_config`, `save_config`, `reset_config`
+- `get_excluded_apps`, `add_excluded_app`, `remove_excluded_app`
+- `get_storage_stats`, `run_retention`, `clear_all_history`
+- `get_autostart_status`, `install_autostart`, `uninstall_autostart`
+- `quick_paste` — Super+N quick paste
 
-Events from Rust to frontend (e.g., new clipboard item captured):
+Events from Rust to frontend:
 ```rust
 app.emit("clip-added", &new_clip)?;
-app.emit("paste-stack-updated", &stack)?;
+app.emit("tray-show-overlay", ())?;
+app.emit("tray-toggle-expander", ())?;
+app.emit("tray-toggle-paste-stack", ())?;
+app.emit("tray-open-settings", ())?;
 ```
 
 ---
@@ -785,8 +682,10 @@ toggle_expander = "Ctrl+Alt+Space"
 [clipboard]
 monitor_primary = true       # Monitor PRIMARY selection (mouse select)
 monitor_clipboard = true     # Monitor CLIPBOARD (Ctrl+C)
-excluded_apps = ["1password", "keepassxc", "bitwarden"]
+excluded_apps = ["1password", "keepassxc", "bitwarden", "lastpass"]
 max_content_size_mb = 10     # Skip items larger than this
+merge_growing = true         # Replace partial selections with complete ones
+debounce_ms = 500            # Ignore rapid copies within this window
 
 [storage]
 max_history_days = 90
@@ -812,13 +711,15 @@ typing_speed = 0             # ms between characters (0 = instant)
 method = "auto"              # auto | xdotool | ydotool | wtype | clipboard
 ```
 
+Configuration is managed by `config.rs` with full `#[serde(default)]` support — any missing fields fall back to sensible defaults. Validation ensures theme, trigger mode, and injection method are valid values.
+
 ---
 
 ## Security Considerations
 
-- **Keyboard monitoring:** The evdev-based input daemon has access to all keyboard events (same as a keylogger). This is mitigated by: (a) the user explicitly adding themselves to the `input` group, (b) all data staying local, (c) no network access. Document this tradeoff clearly.
-- **Clipboard content:** May contain sensitive data (passwords, tokens). Excluded apps list prevents capturing from known password managers. An auto-clear option deletes clipboard items after configurable time.
-- **Shell script snippets:** Execute arbitrary commands. Warn users when creating shell snippets. Never execute snippets from untrusted sources.
+- **Keyboard monitoring:** The evdev-based input daemon has access to all keyboard events (same as a keylogger). This is mitigated by: (a) the user explicitly adding themselves to the `input` group, (b) all data staying local, (c) no network access. Documented clearly in the user guide.
+- **Clipboard content:** May contain sensitive data (passwords, tokens). Excluded apps list prevents capturing from known password managers. Retention policies provide automatic cleanup.
+- **Shell script snippets:** Execute arbitrary commands. Import warnings are shown when importing snippets containing shell commands.
 - **Image storage:** Screenshots may contain sensitive information. Respect retention policies and provide easy deletion.
 - **No telemetry.** No analytics. No network calls. Ever.
 
@@ -829,20 +730,15 @@ method = "auto"              # auto | xdotool | ydotool | wtype | clipboard
 ### Unit Tests (Rust — `cargo test`)
 
 - Clipboard content type detection
-- SQLite schema migrations
+- SQLite schema migrations (fresh, idempotent, sequential)
 - FTS5 search query building
-- Template parsing and evaluation (date macros, nested snippets, etc.)
+- Template parsing and evaluation (date macros, nested snippets, fill-ins)
 - Abbreviation matching algorithm
-- Deduplication logic
+- Deduplication logic (hash, growing text, debounce)
 - Retention policy enforcement
-- Configuration parsing and validation
-
-### Integration Tests (Rust)
-
-- Clipboard monitor → storage → retrieval pipeline
-- Text expander abbreviation detection → template evaluation → injection
-- Paste Stack lifecycle (activate, collect, paste sequence, deactivate)
-- Database migrations across versions
+- Configuration parsing, validation, and round-trip serialization
+- Service file generation
+- Overlay positioning (no-panic tests)
 
 ### Frontend Tests (React — Vitest + React Testing Library)
 
@@ -852,13 +748,6 @@ method = "auto"              # auto | xdotool | ydotool | wtype | clipboard
 - Pinboard management UI
 - Snippet editor UI
 - Card component rendering for each content type
-
-### E2E Tests (Playwright or similar)
-
-- Full flow: copy content → open filmstrip → search → paste
-- Text expansion in a test application
-- Pinboard drag-and-drop
-- Fill-in field dialog
 
 ### Manual Testing Matrix
 
@@ -875,19 +764,20 @@ method = "auto"              # auto | xdotool | ydotool | wtype | clipboard
 
 ```toml
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "shell"] }
-rusqlite = { version = "0.32", features = ["bundled", "fts5"] }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+rusqlite = { version = "0.39", features = ["bundled-full"] }
 evdev = "0.13"
-ksni = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"             # espanso import
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v7"] }
-chrono = "0.4"
-image = "0.25"              # Thumbnail generation
-sha2 = "0.10"               # Content hashing
-toml = "0.8"                # Configuration
-dirs = "5"                  # XDG directory paths
+chrono = { version = "0.4", features = ["serde"] }
+image = "0.25"                  # Thumbnail generation
+sha2 = "0.10"                   # Content hashing
+toml = "0.8"                    # Configuration
+dirs = "5"                      # XDG directory paths
 log = "0.4"
 env_logger = "0.11"
 thiserror = "2"
@@ -927,5 +817,5 @@ sudo apt install xdotool ydotool wtype wl-clipboard
 sudo apt install libwebkit2gtk-4.1-0
 
 # Tauri build dependencies
-sudo apt install libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+sudo apt install libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev
 ```
