@@ -73,6 +73,12 @@ cd src-tauri && cargo test  # Rust (requires GTK system libs)
 | `/stale` | Find stale PRs, orphan branches, dead issues |
 | `/mine-for-ideas` | Analyze a topic and surface actionable ideas |
 
+## Framework Philosophy
+
+This project uses **conventions over configuration**. Agent behavior is defined in this file and the skill files — not in opaque config schemas. The rules are readable, auditable, and versionable. Hooks in `.claude/settings.json` enforce the most critical constraints (destructive operations, release workflow); everything else is convention.
+
+The `/implement` orchestrator writes review findings to `/tmp/paste-implement-findings-<issue>-<pass>.md`. The `/implement-address` skill reads and resolves them. This is the inter-skill communication pattern.
+
 ## Rules
 
 - Never commit to main directly for feature work — always branch + PR
@@ -82,3 +88,4 @@ cd src-tauri && cargo test  # Rust (requires GTK system libs)
 - Every new CSS color must be a theme token in `@theme` block — no hardcoded hex in components
 - Schema changes require a new migration in `storage/migrations.rs`
 - New snippets should be loaded into the expander matcher on change
+- Destructive git operations are blocked by hooks — use the PR workflow

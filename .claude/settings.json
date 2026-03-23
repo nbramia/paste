@@ -1,0 +1,58 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "The agent is about to run a shell command. Check if it contains any destructive git operations: 'git push --force', 'git push -f', 'git reset --hard', 'git checkout .', 'git clean -f', 'git branch -D', 'rm -rf'. If so, BLOCK the command and explain why. Also block any 'cargo publish' or 'npm publish' commands — releases go through the GitHub Actions workflow, not manual publishing. If the command is safe, ALLOW it."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check if the user's message mentions 'release', 'deploy', 'publish', or 'tag'. If so, remind the agent: 'Releases are handled by the GitHub Actions release workflow (.github/workflows/release.yml). Push a v* tag to trigger a build. Do not run cargo publish or npm publish manually.' Then ALLOW the prompt to proceed."
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm run build)",
+      "Bash(npm run lint)",
+      "Bash(npm test)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx vitest run)",
+      "Bash(npx tauri *)",
+      "Bash(cargo test *)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo check *)",
+      "Bash(cargo fmt *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push origin *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Bash(gh issue *)",
+      "Bash(gh pr *)",
+      "Bash(gh api *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)"
+    ]
+  }
+}

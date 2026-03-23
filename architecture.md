@@ -1,5 +1,23 @@
 # Paste — Architecture
 
+## Key Design Decisions
+
+These are the architectural choices that shaped the project. Each involved trade-offs — this section explains what was decided and why.
+
+1. **Tauri v2 over Electron or native GTK** — Tauri gives us a Rust backend with direct system access (evdev, Wayland protocols, SQLite) and a web frontend for the visually rich filmstrip UI. ~5MB binary vs Electron's 100MB+. The trade-off: WebKitGTK rendering isn't as consistent as Chromium, but the resource savings are dramatic.
+
+2. **xclip polling over wl-paste --watch** — The original design used `wl-paste --watch` for event-driven clipboard monitoring. In practice, the compositor didn't support the `wlr-data-control` protocol, and `wl-paste` polling caused desktop side-effects (trash icon bouncing from rapid subprocess spawning). `xclip` via XWayland polls cleanly with no visible side-effects. Trade-off: 1-second polling latency instead of instant event-driven capture.
+
+3. **Tauri built-in tray over ksni crate** — The architecture originally planned to use the `ksni` crate for StatusNotifierItem. Tauri v2's built-in `tray-icon` feature turned out to be sufficient and eliminated an external dependency. Same underlying protocol (AppIndicator/StatusNotifier), simpler integration.
+
+4. **Convention-driven agent framework over settings-file configuration** — Agent behavior is defined in CLAUDE.md and skill files rather than opaque configuration. Rules are readable, auditable, and versionable. Hooks in `.claude/settings.json` enforce the most critical constraints (destructive operations, release workflow); everything else is convention.
+
+5. **xdotool for backspaces, ydotool for typing** — ydotool's key code syntax (`14:1 14:0`) was unreliable across versions, producing garbage characters instead of backspaces. xdotool's `key BackSpace` works reliably under XWayland. The injector uses ydotool for `type` (text insertion) and xdotool for `key` (backspaces). Pragmatic, not elegant.
+
+6. **SQLite with FTS5 over external search** — Clipboard history, snippets, and pinboards all live in one SQLite database. FTS5 provides full-text search with relevance ranking without adding Elasticsearch or similar. Versioned migrations handle schema evolution. Trade-off: single-writer concurrency (Mutex<Connection>), which is fine for a desktop app.
+
+---
+
 ## Hardware Profile
 
 The primary development target is an AMD-based Linux workstation:
@@ -623,51 +641,20 @@ The service is configured with `Restart=on-failure` and `RestartSec=5` for relia
 
 ### IPC (Tauri Commands)
 
-Frontend communicates with Rust backend via Tauri's command system. Key commands:
+Frontend communicates with Rust backend via Tauri's command system. There are ~45 commands organized into 6 domains:
 
-**Clipboard:**
-- `get_clips` — paginated history with filters (type, app, pinboard, favorites)
-- `search_clips` — FTS5 search with Power Search filters
-- `paste_clip` — rich paste (HTML + images preserved)
-- `paste_clip_plain` — plain text paste (strip formatting)
-- `paste_clips_multi` — concatenated multi-clip paste
-- `delete_clip` — remove clip from history
-- `update_clip_content` — inline editing
-- `toggle_favorite` — star/unstar clips
-- `create_clip_from_text` — create clip from dropped content
-- `copy_to_clipboard` — re-copy clip content to clipboard via `xclip -selection clipboard`
+| Domain | Commands | Purpose |
+|--------|----------|---------|
+| Clipboard | 10 | CRUD, search, paste (rich/plain/multi), copy to clipboard, favorites |
+| Pinboards | 6 | CRUD, assign/remove clips |
+| Paste Stack | 8 | Lifecycle management (toggle, push, pop, reorder, clear) |
+| Snippets | 12 | CRUD, groups, fill-in fields, espanso import, JSON export/import |
+| Settings | 6 | Config read/write/reset, exclusion list management |
+| Maintenance | 4 | Storage stats, retention, autostart |
 
-**Pinboards:**
-- `list_pinboards`, `create_pinboard`, `update_pinboard`, `delete_pinboard`
-- `add_clip_to_pinboard`, `remove_clip_from_pinboard`
+The backend also emits events to the frontend: `clip-added` (triggers history reload), and tray menu events (`tray-show-overlay`, `tray-toggle-expander`, etc.).
 
-**Paste Stack:**
-- `toggle_paste_stack`, `get_paste_stack`, `get_paste_stack_status`
-- `add_to_paste_stack`, `pop_paste_stack`, `remove_from_paste_stack`
-- `reorder_paste_stack`, `clear_paste_stack`
-
-**Snippets:**
-- `list_snippets`, `create_snippet`, `update_snippet`, `delete_snippet`
-- `list_snippet_groups`, `create_snippet_group`, `delete_snippet_group`
-- `get_fill_in_fields`, `expand_with_fill_ins`
-- `preview_espanso_import`, `import_espanso`
-- `export_snippets`, `import_snippets_json`
-
-**Settings & Maintenance:**
-- `get_config`, `save_config`, `reset_config`
-- `get_excluded_apps`, `add_excluded_app`, `remove_excluded_app`
-- `get_storage_stats`, `run_retention`, `clear_all_history`
-- `get_autostart_status`, `install_autostart`, `uninstall_autostart`
-- `quick_paste` — Super+N quick paste
-
-Events from Rust to frontend:
-```rust
-app.emit("clip-added", &new_clip)?;
-app.emit("tray-show-overlay", ())?;
-app.emit("tray-toggle-expander", ())?;
-app.emit("tray-toggle-paste-stack", ())?;
-app.emit("tray-open-settings", ())?;
-```
+All commands are registered in `src-tauri/src/lib.rs` in the `invoke_handler` macro. See that file for the full inventory.
 
 ---
 

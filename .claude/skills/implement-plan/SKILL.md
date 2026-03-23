@@ -43,7 +43,7 @@ src-tauri/
         expander/            # Text expander engine (snippet matching, variable substitution)
         hotkey/              # evdev global shortcuts (display-server-independent)
         injector/            # Text injection (xdotool for X11, ydotool/wtype for Wayland)
-        tray/                # System tray via ksni
+        tray/                # System tray (Tauri built-in tray-icon)
         config.rs            # TOML configuration loading and validation
     Cargo.toml
 src/                         # React frontend (TypeScript)
