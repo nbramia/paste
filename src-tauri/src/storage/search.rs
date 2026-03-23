@@ -3,10 +3,10 @@ use super::error::StorageError;
 use super::models::{Clip, ClipFilters};
 
 impl Storage {
-    /// Search clips using FTS5 full-text search with optional filters.
+    /// Search clips using substring matching with optional filters.
     ///
-    /// The query is matched against `text_content` via the `clips_fts` virtual
-    /// table. Results are ordered by FTS5 relevance ranking.
+    /// Uses LIKE for intuitive substring matching (typing "pas" finds "paste").
+    /// Results are ordered by newest first.
     pub fn search_clips(
         &self,
         query: &str,
@@ -14,12 +14,13 @@ impl Storage {
     ) -> Result<Vec<Clip>, StorageError> {
         let conn = self.conn.lock().unwrap();
 
-        // Sanitize the query for FTS5: wrap each term in double quotes
-        // to prevent syntax errors from special characters.
-        let sanitized = sanitize_fts_query(query);
-        if sanitized.is_empty() {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
             return Ok(vec![]);
         }
+
+        // Use LIKE for substring matching — case insensitive by default in SQLite
+        let like_pattern = format!("%{trimmed}%");
 
         let mut sql = String::from(
             "SELECT c.id, c.content_type, c.text_content, c.html_content,
@@ -28,12 +29,12 @@ impl Storage {
                     c.pinboard_id, c.is_favorite, c.created_at,
                     c.accessed_at, c.access_count
              FROM clips c
-             JOIN clips_fts f ON c.rowid = f.rowid
-             WHERE clips_fts MATCH ?",
+             WHERE (c.text_content LIKE ? OR c.source_app LIKE ?)",
         );
 
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        param_values.push(Box::new(sanitized));
+        param_values.push(Box::new(like_pattern.clone()));
+        param_values.push(Box::new(like_pattern));
 
         if let Some(ref ct) = filters.content_type {
             sql.push_str(" AND c.content_type = ?");
@@ -60,7 +61,7 @@ impl Storage {
             param_values.push(Box::new(fav));
         }
 
-        sql.push_str(" ORDER BY rank");
+        sql.push_str(" ORDER BY c.created_at DESC LIMIT 100");
 
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();

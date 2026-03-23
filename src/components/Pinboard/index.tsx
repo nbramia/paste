@@ -25,6 +25,7 @@ export function PinboardView({
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editingPinboard, setEditingPinboard] = useState<PinboardData | null>(null);
+  const [deletingPinboard, setDeletingPinboard] = useState<PinboardData | null>(null);
 
   const loadPinboardClips = useCallback(async (pinboardId: string) => {
     setLoading(true);
@@ -89,41 +90,49 @@ export function PinboardView({
             </div>
           </div>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-3">
             {pinboards.map((pb) => (
               <div
                 key={pb.id}
-                className="group flex items-center gap-2 rounded-lg border border-border-default bg-surface-card px-3 py-2 cursor-pointer hover:bg-surface-hover"
+                onClick={() => handleSelectPinboard(pb.id)}
+                className="group flex h-56 w-56 shrink-0 cursor-pointer flex-col rounded-lg border border-border-default bg-surface-card hover:bg-surface-hover transition-colors"
               >
-                <span
-                  className="h-4 w-4 shrink-0 rounded-full"
-                  style={{ backgroundColor: pb.color }}
-                />
-                <button
-                  onClick={() => handleSelectPinboard(pb.id)}
-                  className="text-sm text-text-secondary hover:text-text-primary"
-                >
-                  {pb.name}
-                </button>
-                <button
-                  onClick={() => setEditingPinboard(pb)}
-                  className="ml-1 text-text-faint opacity-0 group-hover:opacity-100 hover:text-text-secondary"
-                  title="Edit"
-                >
-                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => handleDelete(pb.id)}
-                  className="text-text-faint opacity-0 group-hover:opacity-100 hover:text-red-400"
-                  title="Delete"
-                >
-                  <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
-                </button>
+                {/* Color bar */}
+                <div className="h-2 rounded-t-lg" style={{ backgroundColor: pb.color }} />
+
+                {/* Content area */}
+                <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4">
+                  <span
+                    className="h-10 w-10 rounded-full"
+                    style={{ backgroundColor: pb.color }}
+                  />
+                  <span className="font-heading text-base font-semibold text-text-primary">
+                    {pb.name}
+                  </span>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-1 border-t border-border-subtle px-3 py-2 opacity-0 group-hover:opacity-100">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setEditingPinboard(pb); }}
+                    className="text-text-faint hover:text-text-secondary"
+                    title="Edit"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeletingPinboard(pb); }}
+                    className="text-text-faint hover:text-red-400"
+                    title="Delete"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -145,6 +154,43 @@ export function PinboardView({
             onSave={handleEditSave}
             onClose={() => setEditingPinboard(null)}
           />
+        )}
+
+        {/* Delete confirmation */}
+        {deletingPinboard && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            onClick={() => setDeletingPinboard(null)}
+          >
+            <div
+              className="w-72 rounded-lg border border-border-default bg-surface-primary p-4 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="font-heading text-sm font-semibold text-text-primary">
+                Delete pinboard?
+              </h3>
+              <p className="mt-2 text-sm text-text-secondary">
+                Are you sure you want to delete <strong>{deletingPinboard.name}</strong>? Clips in this pinboard will be unlinked but not deleted.
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setDeletingPinboard(null)}
+                  className="rounded px-3 py-1.5 text-xs text-text-muted hover:text-text-primary"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    handleDelete(deletingPinboard.id);
+                    setDeletingPinboard(null);
+                  }}
+                  className="rounded bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );

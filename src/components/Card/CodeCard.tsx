@@ -54,13 +54,13 @@ export function CodeCard({ text, metadata }: CodeCardProps) {
     <div className="flex flex-1 flex-col overflow-hidden">
       {language && (
         <div className="flex justify-end px-2 pt-1.5">
-          <span className="rounded bg-green-100 text-green-700 dark:bg-accent-soft dark:text-accent-muted px-1.5 py-0.5 text-[10px] font-medium">
+          <span className="rounded bg-green-100 text-green-700 dark:bg-accent-soft dark:text-accent-muted px-1.5 py-0.5 text-xs font-medium">
             {language}
           </span>
         </div>
       )}
-      <div className="flex-1 overflow-hidden px-3 py-1.5">
-        <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-emerald-800 dark:text-emerald-400">
+      <div className="flex-1 overflow-hidden px-3 py-2">
+        <pre className="whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-emerald-800 dark:text-emerald-400">
           {display}
         </pre>
       </div>

@@ -138,7 +138,7 @@ function CardBase({
         damping: 25,
         mass: 0.8,
       }}
-      className={`relative flex h-44 w-48 shrink-0 cursor-pointer flex-col rounded-lg border transition-colors shadow-sm dark:shadow-none ${
+      className={`relative flex h-56 w-56 shrink-0 cursor-pointer flex-col rounded-lg border transition-colors shadow-sm dark:shadow-none ${
         isMultiSelected
           ? "border-emerald-500 ring-2 ring-emerald-500/30 bg-surface-hover"
           : isSelected
@@ -164,16 +164,16 @@ function CardBase({
       </div>
 
       {/* Footer */}
-      <div className="flex items-center gap-2 border-t border-border-subtle px-3 py-1.5">
+      <div className="flex items-center gap-2 border-t border-border-subtle px-3 py-2">
         {clip.is_favorite && (
-          <svg className="h-3 w-3 shrink-0 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
+          <svg className="h-3.5 w-3.5 shrink-0 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
           </svg>
         )}
-        <span className="truncate text-xs text-text-muted">
+        <span className="truncate text-sm text-text-secondary">
           {clip.source_app || "Unknown"}
         </span>
-        <span className="ml-auto text-xs text-text-faint">
+        <span className="ml-auto text-sm text-text-muted">
           {formatRelativeTime(clip.created_at)}
         </span>
       </div>

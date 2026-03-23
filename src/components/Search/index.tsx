@@ -78,8 +78,9 @@ export function Search({ onSearch, onClear, searchRef }: SearchProps) {
         (e.target as HTMLInputElement).blur();
       }
     }
-    // Prevent arrow keys and Enter from propagating to App's handler while typing
-    if (["ArrowLeft", "ArrowRight", "Enter", "Delete", "Backspace", "Tab"].includes(e.key)) {
+    // Let arrow keys and Enter propagate to App for clip navigation/selection
+    // Only stop propagation for keys that should stay in the search input
+    if (["Delete", "Backspace", "Tab"].includes(e.key)) {
       e.stopPropagation();
     }
   };

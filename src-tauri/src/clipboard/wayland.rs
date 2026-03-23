@@ -58,27 +58,32 @@ impl WaylandClipboard {
             }
         }
 
-        // Try gdbus for GNOME
+        // Try focused-window-dbus GNOME extension
         if let Ok(output) = Command::new("gdbus")
             .args([
                 "call",
                 "--session",
                 "--dest", "org.gnome.Shell",
-                "--object-path", "/org/gnome/Shell",
-                "--method", "org.gnome.Shell.Eval",
-                "global.display.focus_window ? global.display.focus_window.get_wm_class() : ''",
+                "--object-path", "/org/gnome/shell/extensions/FocusedWindow",
+                "--method", "org.gnome.shell.extensions.FocusedWindow.Get",
             ])
             .output()
         {
             if output.status.success() {
                 if let Ok(text) = std::str::from_utf8(&output.stdout) {
-                    // gdbus returns: (true, 'ClassName')
-                    // Extract the class name from between quotes
+                    // Returns: ('{"wm_class":"Firefox",...}',)
+                    // Extract JSON from between single quotes, then parse wm_class
                     if let Some(start) = text.find('\'') {
                         if let Some(end) = text[start + 1..].find('\'') {
-                            let class = &text[start + 1..start + 1 + end];
-                            if !class.is_empty() {
-                                return Some(class.to_string());
+                            let json_str = &text[start + 1..start + 1 + end];
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
+                                if let Some(wm_class) = json.get("wm_class").and_then(|v| v.as_str()) {
+                                    if !wm_class.is_empty() {
+                                        // Clean up the class name (e.g., "dev.warp.Warp" → "Warp")
+                                        let name = wm_class.rsplit('.').next().unwrap_or(wm_class);
+                                        return Some(name.to_string());
+                                    }
+                                }
                             }
                         }
                     }

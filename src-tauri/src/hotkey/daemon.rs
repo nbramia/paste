@@ -237,6 +237,15 @@ fn monitor_device(
 
                     // Check hotkey bindings on key press (not repeat or release)
                     if pressed {
+                        log::trace!(
+                            "[{}] key={:?} modifiers=[{}{}{}{}]",
+                            name,
+                            key,
+                            if modifiers.ctrl { "C" } else { "" },
+                            if modifiers.alt { "A" } else { "" },
+                            if modifiers.shift { "S" } else { "" },
+                            if modifiers.super_key { "M" } else { "" },
+                        );
                         for binding in bindings {
                             if binding.combo.key == key
                                 && binding.combo.modifiers.matches(&modifiers)

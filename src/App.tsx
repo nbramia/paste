@@ -138,6 +138,15 @@ function App() {
     };
   }, [loadClips]);
 
+  // Auto-focus search bar when window becomes visible
+  useEffect(() => {
+    const handleFocus = () => {
+      setTimeout(() => searchRef.current?.focus(), 50);
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
   const pasteSelected = useCallback(async () => {
     if (displayClips.length === 0) return;
     const clip = displayClips[selectedIndex];
@@ -258,9 +267,20 @@ function App() {
   }, [displayClips, selectedIndex, addClipToPinboard, loadClips]);
 
   const handleCreatePinboardFromPicker = useCallback(async (name: string, color: string) => {
-    await createPinboard(name, color);
+    try {
+      // Create the pinboard and get its ID back
+      const newPinboard = await invoke<{ id: string }>("create_pinboard", { name, color });
+      // Save the selected clip to the new pinboard
+      const clip = displayClips[selectedIndex];
+      if (clip && newPinboard?.id) {
+        await addClipToPinboard(clip.id, newPinboard.id);
+        await loadClips();
+      }
+    } catch (err) {
+      console.error("Failed to create pinboard and save clip:", err);
+    }
     setShowCreatePinboard(false);
-  }, [createPinboard]);
+  }, [createPinboard, displayClips, selectedIndex, addClipToPinboard, loadClips]);
 
   const handlePasteStackStatusChange = useCallback((active: boolean, count: number) => {
     setPasteStackActive(active);
@@ -301,8 +321,25 @@ function App() {
         return;
       }
 
-      // Don't handle navigation keys when search is focused
-      if (isSearchFocused) return;
+      // Option+Arrow to switch tabs
+      if (e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+        e.preventDefault();
+        const tabs: TabView[] = ["history", "pinboards", "snippets", "settings"];
+        setActiveTab((prev) => {
+          const idx = tabs.indexOf(prev);
+          if (e.key === "ArrowRight") {
+            return tabs[(idx + 1) % tabs.length];
+          } else {
+            return tabs[(idx - 1 + tabs.length) % tabs.length];
+          }
+        });
+        setShowPasteStack(false);
+        return;
+      }
+
+      // When search is focused, allow arrow keys, Enter, and Escape through
+      // Block Space, F, Delete etc. so they type into the search bar
+      if (isSearchFocused && !["ArrowLeft", "ArrowRight", "Enter", "Escape"].includes(e.key)) return;
 
       switch (e.key) {
         case " ": // Space — Quick Look preview
@@ -319,6 +356,9 @@ function App() {
             setShowPreview(false);
           } else if (isSearching) {
             handleClearSearch();
+          } else {
+            // Dismiss the overlay
+            dismissOverlay();
           }
           break;
         case "ArrowRight":
@@ -344,10 +384,9 @@ function App() {
               );
               setMultiSelectedIds(new Set());
             }
-          } else if (e.shiftKey) {
-            pastePlainSelected();
           } else {
-            pasteSelected();
+            // Copy to clipboard (same as double-click)
+            copySelected();
           }
           break;
         case "Delete":
@@ -398,8 +437,29 @@ function App() {
     }
   }, [selectedIndex]);
 
+  const dismissOverlay = useCallback(() => {
+    const win = (window as any).__TAURI__?.window?.getCurrentWindow?.();
+    if (win) {
+      win.hide();
+    } else {
+      // Fallback: use invoke to call a hide command
+      invoke("hide_overlay").catch(() => {});
+    }
+  }, []);
+
   return (
-    <div className="flex h-screen flex-col bg-surface-bg text-text-primary select-none">
+    <div className="flex h-screen flex-col text-text-primary select-none">
+      {/* Backdrop — click to dismiss */}
+      <div
+        className="flex-1 cursor-pointer"
+        onClick={dismissOverlay}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          dismissOverlay();
+        }}
+      />
+      {/* Filmstrip panel at bottom */}
+      <div className="flex flex-col bg-surface-bg border-t border-border-default shadow-2xl">
       {/* Tab bar */}
       <div className="flex items-center gap-1 border-b border-border-default px-4 py-2" role="tablist" aria-label="Content views">
         {(["history", "pinboards", "snippets"] as TabView[]).map((tab) => (
@@ -411,7 +471,7 @@ function App() {
               setActiveTab(tab);
               setShowPasteStack(false);
             }}
-            className={`font-heading rounded-md px-3 py-1 text-sm font-semibold capitalize tracking-wide transition-colors ${
+            className={`font-heading rounded-md px-4 py-1.5 text-base font-semibold capitalize tracking-wide transition-colors ${
               activeTab === tab && !showPasteStack
                 ? "bg-surface-hover text-text-primary"
                 : "text-text-muted hover:text-text-secondary"
@@ -615,7 +675,7 @@ function App() {
 
       {/* Footer with keyboard hints */}
       <div
-        className="flex items-center gap-2 border-t border-border-default px-4 py-1.5 text-[11px] text-text-muted font-heading tracking-wide"
+        className="flex items-center gap-3 border-t border-border-default px-4 py-2 text-xs text-text-muted font-heading tracking-wide"
         role="toolbar"
         aria-label="Keyboard shortcuts"
       >
@@ -638,6 +698,7 @@ function App() {
           </span>
         ))}
       </div>
+      </div>{/* end filmstrip panel */}
     </div>
   );
 }

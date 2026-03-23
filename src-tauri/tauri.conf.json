@@ -14,14 +14,15 @@
       {
         "title": "Paste",
         "label": "main",
-        "width": 1200,
-        "height": 350,
+        "width": 2400,
+        "height": 1400,
         "resizable": true,
-        "decorations": true,
-        "alwaysOnTop": false,
-        "transparent": false,
-        "skipTaskbar": false,
-        "visible": true
+        "decorations": false,
+        "alwaysOnTop": true,
+        "fullscreen": true,
+        "transparent": true,
+        "skipTaskbar": true,
+        "visible": false
       }
     ]
   },

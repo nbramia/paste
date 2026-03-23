@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Listener, Manager};
 
 use std::sync::mpsc;
 
@@ -25,6 +25,9 @@ use clipboard::stack::PasteStack;
 use expander::template::{FillInField, parse_template, extract_fill_in_fields, evaluate_tokens, ExpansionContext};
 use expander::import::{ImportedSnippet, ImportResult, parse_espanso_dir, default_espanso_path};
 use expander::export::{build_export, parse_import, has_script_snippets, JsonImportResult};
+
+/// Channel sender for showing the overlay from the hotkey thread.
+struct ShowOverlaySender(std::sync::Mutex<mpsc::Sender<()>>);
 
 /// Shared application state managed by Tauri.
 pub struct AppState {
@@ -97,6 +100,14 @@ fn paste_clip(
     let elapsed = start.elapsed();
     log::debug!("paste_clip: {}ms", elapsed.as_millis());
 
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        win.hide().map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -907,6 +918,7 @@ pub fn run() {
             uninstall_autostart,
             create_clip_from_text,
             copy_to_clipboard,
+            hide_overlay,
         ])
         .setup(|app| {
             if let Err(e) = tray::setup_tray(app.handle()) {
@@ -914,11 +926,78 @@ pub fn run() {
                 // Continue without tray — not fatal
             }
 
-            // Overlay positioning disabled for initial debugging
-            // TODO: re-enable once window rendering is confirmed working
-            // if let Err(e) = overlay::setup_overlay(app.handle()) {
-            //     log::error!("Failed to setup overlay positioning: {e}");
-            // }
+            // Position window as bottom-edge overlay
+            if let Err(e) = overlay::setup_overlay(app.handle()) {
+                log::error!("Failed to setup overlay positioning: {e}");
+            }
+
+            // Auto-hide when window loses focus (click outside)
+            // Use a flag to avoid hiding immediately after showing
+            if let Some(win) = app.get_webview_window("main") {
+                let win_clone = win.clone();
+                let showing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let showing_clone = showing.clone();
+
+                win.on_window_event(move |event| {
+                    match event {
+                        tauri::WindowEvent::Focused(true) => {
+                            // Window got focus — clear the "just shown" flag
+                            showing_clone.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        tauri::WindowEvent::Focused(false) => {
+                            // Only auto-hide if we're not in the middle of showing
+                            if !showing_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                                let _ = win_clone.hide();
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+
+                // Helper function to show the overlay properly
+                let show_overlay = {
+                    let app_handle = app.handle().clone();
+                    let showing = showing.clone();
+                    move || {
+                        showing.store(true, std::sync::atomic::Ordering::Relaxed);
+                        let _ = overlay::setup_overlay(&app_handle);
+                        if let Some(win) = app_handle.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                        // Clear the flag after a short delay
+                        let showing2 = showing.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                            showing2.store(false, std::sync::atomic::Ordering::Relaxed);
+                        });
+                    }
+                };
+
+                // Handle tray "Show overlay" directly in Rust
+                let show_overlay_tray = show_overlay.clone();
+                app.listen("tray-show-overlay", move |_| {
+                    log::info!("Showing overlay from tray");
+                    show_overlay_tray();
+                });
+
+                // Store the show function for the hotkey handler
+                // We use a channel since we can't easily share closures across threads
+                let (show_tx, show_rx) = std::sync::mpsc::channel::<()>();
+                let show_overlay_hotkey = show_overlay.clone();
+                std::thread::Builder::new()
+                    .name("overlay-show".into())
+                    .spawn(move || {
+                        for () in show_rx {
+                            show_overlay_hotkey();
+                        }
+                    })
+                    .ok();
+
+                // Make show_tx available for the hotkey handler via app state
+                // Store it as managed state
+                app.manage(ShowOverlaySender(std::sync::Mutex::new(show_tx)));
+            }
 
             // Start clipboard monitoring
             {
@@ -1020,8 +1099,10 @@ pub fn run() {
                                                 if win.is_visible().unwrap_or(false) {
                                                     let _ = win.hide();
                                                 } else {
-                                                    let _ = win.show();
-                                                    let _ = win.set_focus();
+                                                    // Use the ShowOverlaySender for proper show with focus handling
+                                                    if let Some(sender) = app_handle_hk.try_state::<ShowOverlaySender>() {
+                                                        let _ = sender.0.lock().unwrap().send(());
+                                                    }
                                                 }
                                             }
                                         }
