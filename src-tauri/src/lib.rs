@@ -1,3 +1,7 @@
+use tauri::Manager;
+
+use std::sync::mpsc;
+
 mod clipboard;
 mod config;
 mod expander;
@@ -15,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use storage::{Storage, models::{Clip, ClipFilters, NewClip, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup, StorageStats}};
 use injector::{select_injector, Injector, RichContent};
 use config::AppConfig;
+use clipboard::ClipboardBackend;
 use clipboard::detection::{compute_hash, detect_text_content_type};
 use clipboard::stack::PasteStack;
 use expander::template::{FillInField, parse_template, extract_fill_in_fields, evaluate_tokens, ExpansionContext};
@@ -91,6 +96,38 @@ fn paste_clip(
 
     let elapsed = start.elapsed();
     log::debug!("paste_clip: {}ms", elapsed.as_millis());
+
+    Ok(())
+}
+
+#[tauri::command]
+fn copy_to_clipboard(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
+    let clip = state.storage
+        .get_clip_by_id(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Clip not found: {}", id))?;
+
+    if let Some(ref text) = clip.text_content {
+        // Use xclip to set clipboard (doesn't simulate paste, just copies)
+        use std::process::{Command, Stdio};
+        use std::io::Write;
+        let mut child = Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+        }
+        child.wait().map_err(|e| e.to_string())?;
+    }
+
+    state.storage
+        .increment_access_count(&id)
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -869,6 +906,7 @@ pub fn run() {
             install_autostart,
             uninstall_autostart,
             create_clip_from_text,
+            copy_to_clipboard,
         ])
         .setup(|app| {
             if let Err(e) = tray::setup_tray(app.handle()) {
@@ -876,10 +914,200 @@ pub fn run() {
                 // Continue without tray — not fatal
             }
 
-            // Position the window as a bottom-edge overlay
-            if let Err(e) = overlay::setup_overlay(app.handle()) {
-                log::error!("Failed to setup overlay positioning: {e}");
-                // Continue with default window position — not fatal
+            // Overlay positioning disabled for initial debugging
+            // TODO: re-enable once window rendering is confirmed working
+            // if let Err(e) = overlay::setup_overlay(app.handle()) {
+            //     log::error!("Failed to setup overlay positioning: {e}");
+            // }
+
+            // Start clipboard monitoring
+            {
+                let app_handle = app.handle().clone();
+                let excluded_apps = if let Some(state) = app_handle.try_state::<AppState>() {
+                    state.excluded_apps.lock().unwrap().clone()
+                } else {
+                    vec![]
+                };
+
+                let (tx, rx) = mpsc::channel::<clipboard::types::ClipItem>();
+
+                // Start Wayland clipboard monitor
+                let monitor = clipboard::wayland::WaylandClipboard::new(excluded_apps, 10);
+                match monitor.start_monitoring(tx) {
+                    Ok(()) => log::info!("Clipboard monitoring started"),
+                    Err(e) => log::error!("Failed to start clipboard monitor: {e}"),
+                }
+
+                // Spawn a thread to receive captured clips and insert into storage
+                let app_handle2 = app.handle().clone();
+                std::thread::Builder::new()
+                    .name("clipboard-receiver".into())
+                    .spawn(move || {
+                        use storage::models::NewClip;
+                        loop {
+                            match rx.recv() {
+                                Ok(item) => {
+                                    if let Some(state) = app_handle2.try_state::<AppState>() {
+                                        let new_clip = NewClip {
+                                            content_type: item.content_type,
+                                            text_content: item.text_content,
+                                            html_content: item.html_content,
+                                            image_path: item.image_path,
+                                            source_app: item.source_app,
+                                            source_app_icon: None,
+                                            content_hash: item.content_hash,
+                                            content_size: item.content_size,
+                                            metadata: item.metadata,
+                                        };
+                                        match state.storage.insert_clip(&new_clip) {
+                                            Ok(clip) => {
+                                                log::debug!(
+                                                    "Clip captured: {} ({} bytes)",
+                                                    clip.content_type, clip.content_size
+                                                );
+                                                // Notify frontend to reload clips
+                                                use tauri::Emitter;
+                                                let _ = app_handle2.emit("clip-added", &clip.id);
+                                            }
+                                            Err(storage::StorageError::Duplicate) => {
+                                                log::debug!("Duplicate clip skipped");
+                                            }
+                                            Err(e) => log::error!("Failed to store clip: {e}"),
+                                        }
+                                    }
+                                }
+                                Err(_) => {
+                                    log::info!("Clipboard channel closed, stopping receiver");
+                                    break;
+                                }
+                            }
+                        }
+                    })
+                    .ok();
+            }
+
+            // Start hotkey daemon + text expander
+            {
+                use hotkey::daemon::{HotkeyDaemon, HotkeyAction, KeystrokeEvent};
+                use expander::engine::{ExpanderEngine, TriggerMode, ExpanderAction};
+
+                let hk_config = config::AppConfig::load().unwrap_or_default();
+
+                match HotkeyDaemon::new(
+                    &hk_config.hotkeys.toggle_overlay,
+                    &hk_config.hotkeys.paste_stack_mode,
+                    &hk_config.hotkeys.quick_copy_to_pinboard,
+                    &hk_config.hotkeys.toggle_expander,
+                ) {
+                    Ok(daemon) => {
+                        let (hotkey_tx, hotkey_rx) = mpsc::channel();
+                        let (keystroke_tx, keystroke_rx) = mpsc::channel();
+
+                        match daemon.start(hotkey_tx, Some(keystroke_tx)) {
+                            Ok(()) => log::info!("Hotkey daemon started"),
+                            Err(e) => log::error!("Failed to start hotkey daemon: {e}"),
+                        }
+
+                        // Handle hotkey events (toggle overlay, etc.)
+                        let app_handle_hk = app.handle().clone();
+                        std::thread::Builder::new()
+                            .name("hotkey-handler".into())
+                            .spawn(move || {
+                                for event in hotkey_rx {
+                                    match event.action {
+                                        HotkeyAction::ToggleOverlay => {
+                                            if let Some(win) = app_handle_hk.get_webview_window("main") {
+                                                if win.is_visible().unwrap_or(false) {
+                                                    let _ = win.hide();
+                                                } else {
+                                                    let _ = win.show();
+                                                    let _ = win.set_focus();
+                                                }
+                                            }
+                                        }
+                                        HotkeyAction::ToggleExpander => {
+                                            log::info!("Text expander toggled");
+                                        }
+                                        HotkeyAction::QuickPaste(n) => {
+                                            if let Some(state) = app_handle_hk.try_state::<AppState>() {
+                                                let clips = state.storage.get_clips(
+                                                    (n as usize) - 1, 1, &ClipFilters::default()
+                                                );
+                                                if let Ok(clips) = clips {
+                                                    if let Some(clip) = clips.first() {
+                                                        if let Some(ref text) = clip.text_content {
+                                                            let _ = state.injector.inject_via_clipboard(text);
+                                                            let _ = state.storage.increment_access_count(&clip.id);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _ => {
+                                            log::debug!("Hotkey action: {:?}", event.action);
+                                        }
+                                    }
+                                }
+                            })
+                            .ok();
+
+                        // Text expander: process keystrokes
+                        let app_handle_exp = app.handle().clone();
+                        std::thread::Builder::new()
+                            .name("text-expander".into())
+                            .spawn(move || {
+                                let trigger = if hk_config.expander.trigger == "immediate" {
+                                    TriggerMode::Immediate
+                                } else {
+                                    TriggerMode::WordBoundary
+                                };
+                                let mut engine = ExpanderEngine::new(trigger, 5);
+
+                                // Load snippets into matcher
+                                if let Some(state) = app_handle_exp.try_state::<AppState>() {
+                                    if let Ok(snippets) = state.storage.list_snippets(None) {
+                                        let entries: Vec<(String, String, String, String)> = snippets
+                                            .iter()
+                                            .map(|s| (
+                                                s.abbreviation.clone(),
+                                                s.id.clone(),
+                                                s.content.clone(),
+                                                s.content_type.clone(),
+                                            ))
+                                            .collect();
+                                        engine.matcher().lock().unwrap().load(entries);
+                                        log::info!("Text expander loaded {} snippets", snippets.len());
+                                    }
+                                }
+
+                                for keystroke in keystroke_rx {
+                                    let action = engine.process_key(keystroke.key, keystroke.pressed);
+                                    match action {
+                                        ExpanderAction::Expand { backspace_count, text, snippet_id } => {
+                                            // +1 backspace for the trigger character (space/punctuation)
+                                            let total_backspaces = backspace_count + 1;
+                                            log::debug!("Expanding snippet {snippet_id}: {total_backspaces} backspaces + {} chars", text.len());
+                                            if let Some(state) = app_handle_exp.try_state::<AppState>() {
+                                                // Delete abbreviation + trigger char
+                                                let _ = state.injector.send_backspaces(total_backspaces);
+                                                std::thread::sleep(std::time::Duration::from_millis(50));
+                                                // Insert expansion
+                                                let _ = state.injector.inject_text(&text);
+                                                // Increment use count
+                                                let _ = state.storage.increment_snippet_use_count(&snippet_id);
+                                            }
+                                        }
+                                        ExpanderAction::None => {}
+                                    }
+                                }
+                            })
+                            .ok();
+                    }
+                    Err(e) => {
+                        log::error!("Failed to create hotkey daemon: {e}");
+                        log::info!("Hotkeys and text expander will not be available");
+                    }
+                }
             }
 
             // Run retention on startup and schedule periodic runs

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence } from "framer-motion";
 import { Filmstrip } from "./components/Filmstrip";
 import { PasteStackView } from "./components/Filmstrip/PasteStackView";
@@ -12,6 +13,7 @@ import { useSnippets } from "./hooks/useSnippets";
 import { SnippetView } from "./components/Snippet";
 import { CardPreview } from "./components/Card/CardPreview";
 import { ClipEditor } from "./components/Card/ClipEditor";
+import { Settings } from "./components/Settings";
 
 export interface ClipData {
   id: string;
@@ -31,7 +33,7 @@ export interface ClipData {
   access_count: number;
 }
 
-type TabView = "history" | "pinboards" | "snippets";
+type TabView = "history" | "pinboards" | "snippets" | "settings";
 
 function App() {
   const { resolvedTheme: _resolvedTheme } = useTheme();
@@ -74,6 +76,7 @@ function App() {
   const [pasteStackCount, setPasteStackCount] = useState(0);
   const [showPreview, setShowPreview] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
 
   // The clips to display: search results when searching, all clips otherwise
   const displayClips = useMemo(
@@ -125,6 +128,16 @@ function App() {
     loadClips();
   }, [loadClips]);
 
+  // Listen for new clips from the backend clipboard monitor
+  useEffect(() => {
+    const unlisten = listen("clip-added", () => {
+      loadClips();
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [loadClips]);
+
   const pasteSelected = useCallback(async () => {
     if (displayClips.length === 0) return;
     const clip = displayClips[selectedIndex];
@@ -133,6 +146,26 @@ function App() {
       await invoke("paste_clip", { id: clip.id });
     } catch (err) {
       console.error("Failed to paste:", err);
+    }
+  }, [displayClips, selectedIndex]);
+
+  const handleCardContextMenu = useCallback((index: number, event: React.MouseEvent) => {
+    setSelectedIndex(index);
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      clipId: displayClips[index]?.id || "",
+    });
+  }, [displayClips]);
+
+  const copySelected = useCallback(async () => {
+    if (displayClips.length === 0) return;
+    const clip = displayClips[selectedIndex];
+    if (!clip) return;
+    try {
+      await invoke("copy_to_clipboard", { id: clip.id });
+    } catch (err) {
+      console.error("Failed to copy:", err);
     }
   }, [displayClips, selectedIndex]);
 
@@ -331,7 +364,7 @@ function App() {
         case "Tab":
           e.preventDefault();
           setActiveTab((prev) => {
-            const tabs: TabView[] = ["history", "pinboards", "snippets"];
+            const tabs: TabView[] = ["history", "pinboards", "snippets", "settings"];
             const idx = tabs.indexOf(prev);
             return tabs[(idx + 1) % tabs.length];
           });
@@ -403,6 +436,23 @@ function App() {
             </span>
           )}
         </button>
+        <button
+          onClick={() => {
+            setActiveTab("settings");
+            setShowPasteStack(false);
+          }}
+          className={`rounded-md p-1.5 transition-colors ${
+            activeTab === "settings" && !showPasteStack
+              ? "bg-surface-hover text-text-primary"
+              : "text-text-muted hover:text-text-secondary"
+          }`}
+          title="Settings"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
         <span className="text-xs text-text-muted" aria-live="polite">
           {multiSelectedIds.size > 0
             ? `${multiSelectedIds.size} selected`
@@ -431,7 +481,8 @@ function App() {
           selectedIndex={selectedIndex}
           multiSelectedIds={multiSelectedIds}
           onSelect={handleCardSelect}
-          onPaste={pasteSelected}
+          onPaste={copySelected}
+          onCardContextMenu={handleCardContextMenu}
           loading={displayLoading}
           containerRef={containerRef}
           onLoadMore={isSearching ? undefined : loadMoreClips}
@@ -447,7 +498,7 @@ function App() {
           onUpdatePinboard={updatePinboard}
           onDeletePinboard={deletePinboard}
         />
-      ) : (
+      ) : activeTab === "snippets" ? (
         <SnippetView
           snippets={snippets}
           groups={snippetGroups}
@@ -459,7 +510,9 @@ function App() {
           onReload={reloadSnippets}
           loading={snippetsLoading}
         />
-      )}
+      ) : activeTab === "settings" ? (
+        <Settings />
+      ) : null}
       </div>
 
       {/* Pinboard picker modal */}
@@ -505,6 +558,60 @@ function App() {
           />
         )}
       </AnimatePresence>
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setContextMenu(null)}
+        >
+          <div
+            className="absolute rounded-lg border border-border-default bg-surface-primary py-1 shadow-xl"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={async () => {
+                await invoke("copy_to_clipboard", { id: contextMenu.clipId });
+                setContextMenu(null);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover"
+            >
+              Copy to clipboard
+            </button>
+            <button
+              onClick={() => {
+                setShowPinboardPicker(true);
+                setContextMenu(null);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover"
+            >
+              Save to pinboard...
+            </button>
+            <button
+              onClick={async () => {
+                await invoke("toggle_favorite", { id: contextMenu.clipId });
+                await loadClips();
+                setContextMenu(null);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover"
+            >
+              Toggle favorite
+            </button>
+            <div className="my-1 border-t border-border-subtle" />
+            <button
+              onClick={async () => {
+                await invoke("delete_clip", { id: contextMenu.clipId });
+                await loadClips();
+                setContextMenu(null);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-surface-hover"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Footer with keyboard hints */}
       <div

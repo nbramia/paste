@@ -14,6 +14,7 @@ interface CardProps {
   isMultiSelected: boolean;
   onSelect: (event: React.MouseEvent) => void;
   onPaste: () => void;
+  onContextMenu?: (event: React.MouseEvent) => void;
 }
 
 const typeColors: Record<string, string> = {
@@ -83,6 +84,7 @@ function CardBase({
   isMultiSelected,
   onSelect,
   onPaste,
+  onContextMenu,
 }: CardProps) {
   const typeColor = typeColors[clip.content_type] || "bg-neutral-500";
   const cardRef = useRef<HTMLDivElement>(null);
@@ -126,6 +128,7 @@ function CardBase({
       draggable
       onClick={onSelect}
       onDoubleClick={onPaste}
+      onContextMenu={onContextMenu}
       animate={{
         scale: isSelected ? 1.03 : 1,
       }}
@@ -135,7 +138,7 @@ function CardBase({
         damping: 25,
         mass: 0.8,
       }}
-      className={`relative flex w-48 shrink-0 cursor-pointer flex-col rounded-lg border transition-colors shadow-sm dark:shadow-none ${
+      className={`relative flex h-44 w-48 shrink-0 cursor-pointer flex-col rounded-lg border transition-colors shadow-sm dark:shadow-none ${
         isMultiSelected
           ? "border-emerald-500 ring-2 ring-emerald-500/30 bg-surface-hover"
           : isSelected
@@ -156,7 +159,9 @@ function CardBase({
       <div className={`h-1.5 rounded-t-lg ${typeColor}`} />
 
       {/* Content preview — dispatched by type */}
-      <CardContent clip={clip} />
+      <div className="flex-1 overflow-hidden">
+        <CardContent clip={clip} />
+      </div>
 
       {/* Footer */}
       <div className="flex items-center gap-2 border-t border-border-subtle px-3 py-1.5">

@@ -77,7 +77,7 @@ pub struct InjectionConfig {
 impl Default for HotkeyConfig {
     fn default() -> Self {
         Self {
-            toggle_overlay: "Super+V".into(),
+            toggle_overlay: "Super+Alt+V".into(),
             paste_stack_mode: "Super+Shift+V".into(),
             quick_copy_to_pinboard: "Super+Shift+C".into(),
             toggle_expander: "Ctrl+Alt+Space".into(),

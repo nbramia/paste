@@ -3,7 +3,7 @@
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager,
+    AppHandle, Emitter, Manager,
 };
 use log::info;
 

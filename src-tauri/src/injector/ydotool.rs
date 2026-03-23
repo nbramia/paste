@@ -33,15 +33,17 @@ impl Injector for YdotoolInjector {
             return Ok(());
         }
 
-        debug!("ydotool: sending {} backspaces", count);
+        debug!("ydotool: sending {} backspaces via xdotool", count);
 
+        // Use xdotool for backspaces — more reliable across ydotool versions
+        // xdotool works under XWayland on most Wayland setups
         for _ in 0..count {
-            let status = Command::new("ydotool")
-                .args(["key", "14:1", "14:0"]) // KEY_BACKSPACE press and release
+            let status = Command::new("xdotool")
+                .args(["key", "--clearmodifiers", "BackSpace"])
                 .status()?;
 
             if !status.success() {
-                return Err(InjectorError::Failed("ydotool key backspace failed".into()));
+                return Err(InjectorError::Failed("xdotool key BackSpace failed".into()));
             }
         }
 

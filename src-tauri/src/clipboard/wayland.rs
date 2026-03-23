@@ -145,19 +145,10 @@ impl ClipboardBackend for WaylandClipboard {
             })
             .map_err(ClipboardError::Io)?;
 
-        // Spawn image monitoring thread
-        let excluded_img = self.excluded_apps.clone();
-        let max_size_img = self.max_content_size_bytes;
-        thread::Builder::new()
-            .name("clipboard-image".into())
-            .spawn(move || {
-                let monitor = WaylandClipboard {
-                    excluded_apps: excluded_img,
-                    max_content_size_bytes: max_size_img,
-                };
-                monitor_image_loop(&monitor, tx);
-            })
-            .map_err(ClipboardError::Io)?;
+        // Image monitoring disabled — wl-paste --type image/png polling
+        // causes desktop side-effects on some compositors.
+        // TODO: re-enable with event-driven approach
+        drop(tx); // drop the sender clone for images
 
         Ok(())
     }
@@ -180,14 +171,11 @@ impl ClipboardBackend for WaylandClipboard {
 /// Main loop for monitoring text clipboard changes.
 fn monitor_text_loop(monitor: &WaylandClipboard, tx: mpsc::Sender<ClipItem>) {
     loop {
-        info!("Starting wl-paste polling for text");
         let result = run_text_watcher(monitor, &tx);
         if let Err(e) = result {
-            error!("Text clipboard watcher exited: {e}");
+            error!("Clipboard watcher error: {e}. Restarting in 5s...");
+            thread::sleep(std::time::Duration::from_secs(5));
         }
-        // Restart after 1 second delay
-        warn!("Text clipboard watcher will restart in 1s");
-        thread::sleep(std::time::Duration::from_secs(1));
     }
 }
 
@@ -233,7 +221,8 @@ fn reassert_clipboard(content: &str, html: Option<&str>) {
     }
 }
 
-/// Run a polling loop that reads the current clipboard text via wl-paste.
+/// Poll-based clipboard watcher. Reads clipboard every 1s via `wl-paste`.
+/// Only spawns a subprocess when checking — no persistent child process.
 fn run_text_watcher(
     monitor: &WaylandClipboard,
     tx: &mpsc::Sender<ClipItem>,
@@ -242,44 +231,57 @@ fn run_text_watcher(
     let mut last_content: Option<String> = None;
     let mut last_html: Option<String> = None;
 
+    // Use xclip via XWayland — avoids wl-paste subprocess visibility
+    // issues that cause desktop side-effects (e.g., trash icon bouncing)
+    let use_xclip = Command::new("xclip").arg("-version")
+        .stdout(Stdio::null()).stderr(Stdio::null())
+        .status().map(|s| s.success()).unwrap_or(false);
+
+    let tool = if use_xclip { "xclip" } else { "wl-paste" };
+    info!("Clipboard polling started (1s interval, using {tool})");
+
     loop {
-        // Read current clipboard text
-        let output = Command::new("wl-paste")
-            .args(["--no-newline"])
-            .output()?;
+        thread::sleep(std::time::Duration::from_secs(1));
+
+        let output = if use_xclip {
+            match Command::new("xclip")
+                .args(["-selection", "clipboard", "-o"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .output()
+            {
+                Ok(o) => o,
+                Err(_) => continue,
+            }
+        } else {
+            match Command::new("wl-paste")
+                .args(["--no-newline"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .output()
+            {
+                Ok(o) => o,
+                Err(_) => continue,
+            }
+        };
 
         if !output.status.success() || output.stdout.is_empty() {
-            // Clipboard is empty or non-text.
-            // If we previously had content, the source app likely closed.
-            // Re-assert the last known clipboard content.
             if let Some(ref content) = last_content {
-                debug!(
-                    "Clipboard lost — re-asserting last known content ({} chars)",
-                    content.len()
-                );
+                debug!("Clipboard lost — re-asserting");
                 reassert_clipboard(content, last_html.as_deref());
             }
-            thread::sleep(std::time::Duration::from_millis(500));
             continue;
         }
 
         let content = output.stdout;
 
-        // Skip content larger than max size
         if content.len() as u64 > monitor.max_content_size_bytes {
-            debug!(
-                "Skipping clipboard content: too large ({} bytes)",
-                content.len()
-            );
-            thread::sleep(std::time::Duration::from_millis(500));
             continue;
         }
 
         let hash = compute_hash(&content);
 
-        // Check for change
         if last_hash.as_ref() == Some(&hash) {
-            thread::sleep(std::time::Duration::from_millis(500));
             continue;
         }
 
@@ -340,8 +342,6 @@ fn run_text_watcher(
             info!("Clipboard channel closed, stopping text monitor");
             return Ok(());
         }
-
-        thread::sleep(std::time::Duration::from_millis(500));
     }
 }
 

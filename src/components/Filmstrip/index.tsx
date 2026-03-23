@@ -11,6 +11,7 @@ interface FilmstripProps {
   multiSelectedIds: Set<string>;
   onSelect: (index: number, event: React.MouseEvent) => void;
   onPaste: () => void;
+  onCardContextMenu?: (index: number, event: React.MouseEvent) => void;
   loading: boolean;
   containerRef: RefObject<HTMLDivElement | null>;
   onLoadMore?: () => void;
@@ -25,6 +26,7 @@ export function Filmstrip({
   multiSelectedIds,
   onSelect,
   onPaste,
+  onCardContextMenu,
   loading,
   containerRef,
   onLoadMore,
@@ -100,7 +102,20 @@ export function Filmstrip({
     if (!container) return;
 
     container.addEventListener("scroll", handleScroll);
-    return () => container.removeEventListener("scroll", handleScroll);
+
+    // Convert vertical mouse wheel to horizontal scroll
+    const handleWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        e.preventDefault();
+        container.scrollLeft += e.deltaY;
+      }
+    };
+    container.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      container.removeEventListener("wheel", handleWheel);
+    };
   }, [containerRef, handleScroll]);
 
   if (loading) {
@@ -160,6 +175,10 @@ export function Filmstrip({
               isMultiSelected={multiSelectedIds.has(clip.id)}
               onSelect={(e: React.MouseEvent) => onSelect(index, e)}
               onPaste={onPaste}
+              onContextMenu={onCardContextMenu ? (e: React.MouseEvent) => {
+                e.preventDefault();
+                onCardContextMenu(index, e);
+              } : undefined}
             />
           </motion.div>
         ))}
