@@ -288,8 +288,10 @@ fn watch_for_new_keyboards(
 /// Devices created by our own text injector are excluded — monitoring them
 /// would feed injected text back into the expander's keystroke buffer.
 fn is_keyboard(device: &Device) -> bool {
+    // "ydotool" matches both the ydotoold daemon's persistent device and the
+    // ephemeral "ydotool virtual device" created per-invocation without the daemon.
     let name = device.name().unwrap_or("unknown");
-    if name.contains("ydotoold") || name.contains("wtype") {
+    if name.contains("ydotool") || name.contains("wtype") {
         return false;
     }
 
