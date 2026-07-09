@@ -1,5 +1,8 @@
-use std::sync::mpsc;
+use std::collections::HashSet;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use std::time::Duration;
 
 use evdev::{Device, EventSummary, EventType, KeyCode};
 use log::{debug, info, warn};
@@ -122,7 +125,12 @@ impl HotkeyDaemon {
         Ok(Self { bindings })
     }
 
-    /// Start the daemon. Spawns a thread per keyboard device.
+    /// Start the daemon. Spawns a thread per keyboard device, plus a hotplug
+    /// watcher that picks up keyboards appearing after startup (USB hotplug,
+    /// or virtual devices from keymappers like Toshy/xwaykeyz that grab the
+    /// physical keyboards and re-emit through their own device — if we start
+    /// before the keymapper, the physical devices go silent and only the
+    /// virtual one carries real keystrokes).
     ///
     /// - `hotkey_tx`: channel for hotkey events
     /// - `keystroke_tx`: optional channel for all keystrokes (for text expander)
@@ -141,33 +149,160 @@ impl HotkeyDaemon {
 
         info!("Found {} keyboard device(s)", devices.len());
 
-        for device in devices {
-            let name = device.name().unwrap_or("unknown").to_string();
-            info!("Monitoring keyboard: {}", name);
+        let monitored: Arc<Mutex<HashSet<PathBuf>>> = Arc::new(Mutex::new(HashSet::new()));
 
-            let bindings = self.bindings.clone();
-            let htx = hotkey_tx.clone();
-            let ktx = keystroke_tx.clone();
-
-            thread::Builder::new()
-                .name(format!(
-                    "hotkey-{}",
-                    name.chars().take(20).collect::<String>()
-                ))
-                .spawn(move || {
-                    monitor_device(device, &bindings, htx, ktx);
-                })
-                .map_err(HotkeyError::Io)?;
+        for (path, device) in devices {
+            spawn_monitor(
+                path,
+                device,
+                self.bindings.clone(),
+                hotkey_tx.clone(),
+                keystroke_tx.clone(),
+                Arc::clone(&monitored),
+            )?;
         }
+
+        let bindings = self.bindings.clone();
+        thread::Builder::new()
+            .name("hotkey-hotplug".into())
+            .spawn(move || {
+                watch_for_new_keyboards(bindings, hotkey_tx, keystroke_tx, monitored);
+            })
+            .map_err(HotkeyError::Io)?;
 
         Ok(())
     }
 }
 
-/// Find all keyboard devices that support key events.
-fn find_keyboard_devices() -> Result<Vec<Device>, HotkeyError> {
-    let mut keyboards = Vec::new();
+/// How often the hotplug watcher rescans /dev/input for new devices.
+const HOTPLUG_SCAN_INTERVAL: Duration = Duration::from_secs(2);
 
+/// Lock a mutex, recovering the data if a monitor thread panicked while holding it.
+fn lock_set(set: &Mutex<HashSet<PathBuf>>) -> std::sync::MutexGuard<'_, HashSet<PathBuf>> {
+    match set.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+/// Register a device as monitored and spawn its monitor thread.
+/// The path is removed from the monitored set when the thread exits,
+/// so a device that disconnects and reappears gets picked up again.
+fn spawn_monitor(
+    path: PathBuf,
+    device: Device,
+    bindings: Vec<HotkeyBinding>,
+    hotkey_tx: mpsc::Sender<HotkeyEvent>,
+    keystroke_tx: Option<mpsc::Sender<KeystrokeEvent>>,
+    monitored: Arc<Mutex<HashSet<PathBuf>>>,
+) -> Result<(), HotkeyError> {
+    let name = device.name().unwrap_or("unknown").to_string();
+    info!("Monitoring keyboard: {}", name);
+
+    lock_set(&monitored).insert(path.clone());
+
+    thread::Builder::new()
+        .name(format!(
+            "hotkey-{}",
+            name.chars().take(20).collect::<String>()
+        ))
+        .spawn(move || {
+            monitor_device(device, &bindings, hotkey_tx, keystroke_tx);
+            lock_set(&monitored).remove(&path);
+        })
+        .map_err(HotkeyError::Io)?;
+
+    Ok(())
+}
+
+/// Watch /dev/input for keyboards appearing after startup and monitor them.
+///
+/// A device node that fails to open is retried on the next scan — right after
+/// hotplug, udev may not have applied the `input` group permissions yet.
+fn watch_for_new_keyboards(
+    bindings: Vec<HotkeyBinding>,
+    hotkey_tx: mpsc::Sender<HotkeyEvent>,
+    keystroke_tx: Option<mpsc::Sender<KeystrokeEvent>>,
+    monitored: Arc<Mutex<HashSet<PathBuf>>>,
+) {
+    // Non-keyboard device nodes seen on a previous scan; dropped when the node
+    // disappears so a reused event number gets re-examined.
+    let mut classified: HashSet<PathBuf> = HashSet::new();
+
+    loop {
+        thread::sleep(HOTPLUG_SCAN_INTERVAL);
+
+        let entries = match std::fs::read_dir("/dev/input") {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        let mut present: HashSet<PathBuf> = HashSet::new();
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let is_event_node = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("event"));
+            if !is_event_node {
+                continue;
+            }
+            present.insert(path.clone());
+
+            if classified.contains(&path) || lock_set(&monitored).contains(&path) {
+                continue;
+            }
+
+            let Ok(device) = Device::open(&path) else {
+                // Permissions may not be applied yet; retry next scan.
+                continue;
+            };
+
+            if !is_keyboard(&device) {
+                classified.insert(path);
+                continue;
+            }
+
+            let name = device.name().unwrap_or("unknown").to_string();
+            info!("New keyboard appeared: {} ({})", name, path.display());
+
+            if let Err(e) = spawn_monitor(
+                path,
+                device,
+                bindings.clone(),
+                hotkey_tx.clone(),
+                keystroke_tx.clone(),
+                Arc::clone(&monitored),
+            ) {
+                warn!("Failed to monitor new keyboard '{}': {}", name, e);
+            }
+        }
+
+        classified.retain(|path| present.contains(path));
+    }
+}
+
+/// Whether a device has key event support and looks like a keyboard.
+///
+/// Devices created by our own text injector are excluded — monitoring them
+/// would feed injected text back into the expander's keystroke buffer.
+fn is_keyboard(device: &Device) -> bool {
+    let name = device.name().unwrap_or("unknown");
+    if name.contains("ydotoold") || name.contains("wtype") {
+        return false;
+    }
+
+    // A keyboard should support common letter keys
+    device.supported_keys().is_some_and(|supported_keys| {
+        supported_keys.contains(KeyCode::KEY_A)
+            && supported_keys.contains(KeyCode::KEY_Z)
+            && supported_keys.contains(KeyCode::KEY_SPACE)
+    })
+}
+
+/// Find all keyboard devices that support key events.
+fn find_keyboard_devices() -> Result<Vec<(PathBuf, Device)>, HotkeyError> {
     let devices = evdev::enumerate().collect::<Vec<_>>();
 
     if devices.is_empty() {
@@ -175,20 +310,10 @@ fn find_keyboard_devices() -> Result<Vec<Device>, HotkeyError> {
         return Err(HotkeyError::NoDevices);
     }
 
-    for (_path, device) in devices {
-        // Check if this device has key event support and looks like a keyboard
-        if let Some(supported_keys) = device.supported_keys() {
-            // A keyboard should support common letter keys
-            if supported_keys.contains(KeyCode::KEY_A)
-                && supported_keys.contains(KeyCode::KEY_Z)
-                && supported_keys.contains(KeyCode::KEY_SPACE)
-            {
-                keyboards.push(device);
-            }
-        }
-    }
-
-    Ok(keyboards)
+    Ok(devices
+        .into_iter()
+        .filter(|(_, device)| is_keyboard(device))
+        .collect())
 }
 
 /// Monitor a single keyboard device for hotkey events.
