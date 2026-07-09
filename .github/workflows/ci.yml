@@ -26,6 +26,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # custom-protocol is a default feature, so compiling the Rust crate
+      # embeds the frontend — dist/ must exist before any cargo command.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Build frontend (required by generate_context!)
+        run: |
+          npm ci
+          npm run build
+
       - name: Install system dependencies
         run: |
           sudo apt-get update

@@ -27,21 +27,26 @@ fn service_content() -> String {
     // Try to find our own executable path
     let exec_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/bin/paste"));
 
+    // WantedBy=graphical-session.target (not default.target): default.target
+    // starts at login before the compositor is up, so GTK init fails and the
+    // app crash-loops until the desktop appears. Tying the unit to the
+    // graphical session also gives it the session's DISPLAY/WAYLAND_DISPLAY
+    // instead of a hardcoded value.
     format!(
         r#"[Unit]
 Description=Paste — Clipboard Manager
 Documentation=https://github.com/nbramia/paste
 After=graphical-session.target
+PartOf=graphical-session.target
 
 [Service]
 Type=simple
 ExecStart={}
 Restart=on-failure
 RestartSec=5
-Environment=DISPLAY=:0
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 "#,
         exec_path.display()
     )
@@ -165,7 +170,9 @@ mod tests {
         assert!(content.contains("[Install]"));
         assert!(content.contains("Type=simple"));
         assert!(content.contains("Restart=on-failure"));
-        assert!(content.contains("WantedBy=default.target"));
+        assert!(content.contains("WantedBy=graphical-session.target"));
+        assert!(content.contains("PartOf=graphical-session.target"));
+        assert!(!content.contains("DISPLAY=:0"));
         assert!(content.contains("ExecStart="));
     }
 

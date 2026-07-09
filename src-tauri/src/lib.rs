@@ -931,6 +931,15 @@ pub fn run() {
                 log::error!("Failed to setup overlay positioning: {e}");
             }
 
+            // Open the web inspector at startup when requested — the overlay
+            // auto-hides on focus loss, so the right-click route can't reach it.
+            #[cfg(feature = "devtools")]
+            if std::env::var("PASTE_DEVTOOLS").is_ok() {
+                if let Some(win) = app.get_webview_window("main") {
+                    win.open_devtools();
+                }
+            }
+
             // Auto-hide when window loses focus (click outside)
             // Use a flag to avoid hiding immediately after showing
             if let Some(win) = app.get_webview_window("main") {
