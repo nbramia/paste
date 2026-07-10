@@ -68,8 +68,22 @@ fn get_clips(
     result
 }
 
+/// Hide the overlay and give the compositor time to refocus the previously
+/// active window, so injected keystrokes land at the user's cursor rather
+/// than the overlay itself. No-op when the overlay is already hidden
+/// (e.g. Quick Paste via Super+N).
+fn hide_overlay_for_paste(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+}
+
 #[tauri::command]
 fn paste_clip(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
@@ -87,6 +101,8 @@ fn paste_clip(
         html: clip.html_content.clone(),
         image_path: clip.image_path.clone(),
     };
+
+    hide_overlay_for_paste(&app);
 
     state.injector
         .inject_rich(&rich_content)
@@ -622,6 +638,7 @@ fn update_clip_content(
 
 #[tauri::command]
 fn paste_clips_multi(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     ids: Vec<String>,
 ) -> Result<(), String> {
@@ -649,6 +666,7 @@ fn paste_clips_multi(
 
     // Concatenate with newlines and paste
     let combined = texts.join("\n");
+    hide_overlay_for_paste(&app);
     state.injector
         .inject_via_clipboard(&combined)
         .map_err(|e| e.to_string())?;
@@ -661,6 +679,7 @@ fn paste_clips_multi(
 
 #[tauri::command]
 fn paste_clip_plain(
+    app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
@@ -670,8 +689,11 @@ fn paste_clip_plain(
         .ok_or_else(|| format!("Clip not found: {}", id))?;
 
     if let Some(ref text) = clip.text_content {
+        hide_overlay_for_paste(&app);
+        // Plain paste = text-only clipboard injection (no HTML/image MIME).
+        // Clipboard + Ctrl+V is far more reliable than typing simulation.
         state.injector
-            .inject_text(text)
+            .inject_via_clipboard(text)
             .map_err(|e| e.to_string())?;
     }
 
@@ -842,6 +864,10 @@ pub fn run() {
     };
 
     // Initialize injector with fallback to clipboard on failure
+    // Create the persistent virtual keyboard up front so the compositor has
+    // registered it long before the first paste (avoids dropped keystrokes).
+    injector::virtual_keyboard::init();
+
     let injector = match select_injector(&config.injection.method) {
         Ok(i) => {
             log::info!("Text injector initialized: {}", i.name());

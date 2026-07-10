@@ -1,6 +1,7 @@
 //! Text injection via xdotool (X11), ydotool (Wayland), or wtype (wlroots).
 
 mod clipboard_inject;
+pub mod virtual_keyboard;
 mod xdotool;
 mod ydotool;
 mod wtype;

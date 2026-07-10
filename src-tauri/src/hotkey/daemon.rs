@@ -289,9 +289,10 @@ fn watch_for_new_keyboards(
 /// would feed injected text back into the expander's keystroke buffer.
 fn is_keyboard(device: &Device) -> bool {
     // "ydotool" matches both the ydotoold daemon's persistent device and the
-    // ephemeral "ydotool virtual device" created per-invocation without the daemon.
+    // ephemeral "ydotool virtual device" created per-invocation without the
+    // daemon. "paste-injection" is our own persistent virtual keyboard.
     let name = device.name().unwrap_or("unknown");
-    if name.contains("ydotool") || name.contains("wtype") {
+    if name.contains("ydotool") || name.contains("wtype") || name.contains("paste-injection") {
         return false;
     }
 
