@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ClipData } from "../../App";
 import type { PinboardData } from "../../hooks/usePinboards";
@@ -11,6 +11,12 @@ interface PinboardViewProps {
   onCreatePinboard: (name: string, color: string) => void;
   onUpdatePinboard: (id: string, name: string, color: string) => void;
   onDeletePinboard: (id: string) => void;
+  /**
+   * Confirm a clip (Enter or double-click): put it on the clipboard and
+   * dismiss the overlay. Supplied by App so pinboards and the history
+   * filmstrip share one definition of "confirm".
+   */
+  onConfirmClip: (id: string) => void;
 }
 
 export function PinboardView({
@@ -19,13 +25,16 @@ export function PinboardView({
   onCreatePinboard,
   onUpdatePinboard,
   onDeletePinboard,
+  onConfirmClip,
 }: PinboardViewProps) {
   const [selectedPinboard, setSelectedPinboard] = useState<string | null>(null);
   const [clips, setClips] = useState<ClipData[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editingPinboard, setEditingPinboard] = useState<PinboardData | null>(null);
   const [deletingPinboard, setDeletingPinboard] = useState<PinboardData | null>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
 
   const loadPinboardClips = useCallback(async (pinboardId: string) => {
     setLoading(true);
@@ -36,6 +45,7 @@ export function PinboardView({
         pinboardId: pinboardId,
       });
       setClips(result);
+      setSelectedIndex(0);
     } catch (err) {
       console.error("Failed to load pinboard clips:", err);
     } finally {
@@ -45,8 +55,50 @@ export function PinboardView({
 
   const handleSelectPinboard = (id: string) => {
     setSelectedPinboard(id);
+    setSelectedIndex(0);
     loadPinboardClips(id);
   };
+
+  const confirmClip = useCallback(
+    (index: number) => {
+      const clip = clips[index];
+      if (clip) onConfirmClip(clip.id);
+    },
+    [clips, onConfirmClip],
+  );
+
+  // This view owns arrow/Enter handling while a pinboard's clips are open.
+  // App's global handler stands down for non-history tabs (see #99), so the
+  // two never fight over the same keypress.
+  useEffect(() => {
+    if (!selectedPinboard || clips.length === 0) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      switch (e.key) {
+        case "ArrowRight":
+          e.preventDefault();
+          setSelectedIndex((prev) => Math.min(prev + 1, clips.length - 1));
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          setSelectedIndex((prev) => Math.max(prev - 1, 0));
+          break;
+        case "Enter":
+          e.preventDefault();
+          confirmClip(selectedIndex);
+          break;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedPinboard, clips.length, selectedIndex, confirmClip]);
+
+  // Keep the highlighted card on screen as the selection moves.
+  useEffect(() => {
+    const card = stripRef.current?.querySelector(`[data-index="${selectedIndex}"]`);
+    card?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [selectedIndex, clips]);
 
   const handleCreateSave = (name: string, color: string) => {
     onCreatePinboard(name, color);
@@ -230,16 +282,16 @@ export function PinboardView({
           <p className="text-sm">No clips in this pinboard</p>
         </div>
       ) : (
-        <div className="flex flex-1 items-stretch gap-3 overflow-x-auto px-4 py-3">
+        <div ref={stripRef} className="flex flex-1 items-stretch gap-3 overflow-x-auto px-4 py-3">
           {clips.map((clip, index) => (
             <Card
               key={clip.id}
               clip={clip}
               index={index}
-              isSelected={false}
+              isSelected={index === selectedIndex}
               isMultiSelected={false}
-              onSelect={() => {}}
-              onPaste={() => {}}
+              onSelect={() => setSelectedIndex(index)}
+              onPaste={() => confirmClip(index)}
             />
           ))}
         </div>
