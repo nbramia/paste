@@ -1,9 +1,9 @@
 //! Import snippets from espanso configuration files.
 
-use std::path::{Path, PathBuf};
-use std::fs;
-use serde::Deserialize;
 use log::{debug, info, warn};
+use serde::Deserialize;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// An espanso match entry (trigger + replace).
 #[derive(Debug, Deserialize)]
@@ -11,6 +11,8 @@ struct EspansoMatch {
     trigger: Option<String>,
     replace: Option<String>,
     #[serde(default)]
+    // espanso's per-match `word` flag is parsed but the matcher does not honor it yet.
+    #[allow(dead_code)]
     word: bool,
     // form, vars, etc. are not supported yet
 }
@@ -73,7 +75,11 @@ pub fn parse_espanso_dir(dir: &Path) -> Result<Vec<ImportedSnippet>, String> {
 
         match parse_espanso_file(&path) {
             Ok(file_snippets) => {
-                info!("Parsed {} snippets from {}", file_snippets.len(), path.display());
+                info!(
+                    "Parsed {} snippets from {}",
+                    file_snippets.len(),
+                    path.display()
+                );
                 snippets.extend(file_snippets);
             }
             Err(e) => {
@@ -218,10 +224,7 @@ mod tests {
 
     #[test]
     fn test_convert_no_variables() {
-        assert_eq!(
-            convert_espanso_variables("plain text"),
-            "plain text"
-        );
+        assert_eq!(convert_espanso_variables("plain text"), "plain text");
     }
 
     #[test]
@@ -267,7 +270,11 @@ matches:
         let snippets = parse_espanso_file(&path).unwrap();
         assert_eq!(snippets.len(), 3);
         assert_eq!(snippets[0].abbreviation, ";sig");
-        assert_eq!(snippets[0].content, "Best regards,\\nJohn"); // YAML literal
+        // A YAML double-quoted scalar processes escapes, so `\n` in the file
+        // is a real newline by the time it reaches us — which is what a
+        // signature snippet wants. The old expectation of a literal
+        // backslash-n was simply wrong about YAML.
+        assert_eq!(snippets[0].content, "Best regards,\nJohn");
         assert_eq!(snippets[1].abbreviation, ";email");
         assert_eq!(snippets[2].content, "Today is %Y-%m-%d");
 
@@ -303,11 +310,13 @@ matches:
         fs::write(
             dir.join("a.yml"),
             "matches:\n  - trigger: \";a\"\n    replace: \"alpha\"\n",
-        ).unwrap();
+        )
+        .unwrap();
         fs::write(
             dir.join("b.yaml"),
             "matches:\n  - trigger: \";b\"\n    replace: \"beta\"\n",
-        ).unwrap();
+        )
+        .unwrap();
         fs::write(dir.join("readme.txt"), "not yaml").unwrap();
 
         let snippets = parse_espanso_dir(&dir).unwrap();

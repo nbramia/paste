@@ -118,6 +118,9 @@ pub struct NewSnippetGroup {
 
 /// Represents an item on the paste stack.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// The paste-stack commands operate on `Clip` rows joined through `paste_stack`;
+// this row struct is not materialized.
+#[allow(dead_code)]
 pub struct PasteStackItem {
     pub id: String,
     pub clip_id: String,

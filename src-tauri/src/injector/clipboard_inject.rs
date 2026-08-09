@@ -1,10 +1,10 @@
+use std::io::Write;
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
-use std::io::Write;
 
-use log::{debug, warn};
 use super::{Injector, InjectorError};
+use log::{debug, warn};
 
 /// Rich clipboard content for multi-format paste.
 pub struct RichContent {
@@ -23,11 +23,15 @@ pub struct ClipboardInjector {
 
 impl ClipboardInjector {
     pub fn wayland() -> Self {
-        Self { display_server: "wayland" }
+        Self {
+            display_server: "wayland",
+        }
     }
 
     pub fn x11() -> Self {
-        Self { display_server: "x11" }
+        Self {
+            display_server: "x11",
+        }
     }
 
     /// Auto-detect display server for clipboard injector.
@@ -68,7 +72,9 @@ impl Injector for ClipboardInjector {
                     Ok(())
                 } else if super::is_tool_available("ydotool") {
                     for _ in 0..count {
-                        Command::new("ydotool").args(["key", "14:1", "14:0"]).status()?;
+                        Command::new("ydotool")
+                            .args(["key", "14:1", "14:0"])
+                            .status()?;
                     }
                     Ok(())
                 } else {
@@ -110,7 +116,11 @@ impl Injector for ClipboardInjector {
 
 /// Clipboard injection for Wayland: wl-copy + key simulation via specified tool.
 pub(crate) fn clipboard_inject_wayland(text: &str, key_tool: &str) -> Result<(), InjectorError> {
-    debug!("Clipboard inject (Wayland): {} chars via {}", text.len(), key_tool);
+    debug!(
+        "Clipboard inject (Wayland): {} chars via {}",
+        text.len(),
+        key_tool
+    );
 
     // Set clipboard to new content. The pasted content intentionally stays
     // on the clipboard afterwards so the user can paste it again manually.
@@ -180,7 +190,10 @@ pub(crate) fn clipboard_inject_x11(text: &str) -> Result<(), InjectorError> {
 
 /// Paste rich content via clipboard on Wayland.
 /// Sets multiple MIME types so target apps get the best format.
-pub(crate) fn clipboard_inject_rich_wayland(content: &RichContent, key_tool: &str) -> Result<(), InjectorError> {
+pub(crate) fn clipboard_inject_rich_wayland(
+    content: &RichContent,
+    key_tool: &str,
+) -> Result<(), InjectorError> {
     debug!("Rich clipboard inject (Wayland)");
 
     // Set clipboard with appropriate MIME type. The pasted content
@@ -192,7 +205,8 @@ pub(crate) fn clipboard_inject_rich_wayland(content: &RichContent, key_tool: &st
             let status = Command::new("wl-copy")
                 .args(["--type", "image/png"])
                 .stdin(std::process::Stdio::from(
-                    std::fs::File::open(path).map_err(|e| InjectorError::Failed(format!("Open image: {e}")))?
+                    std::fs::File::open(path)
+                        .map_err(|e| InjectorError::Failed(format!("Open image: {e}")))?,
                 ))
                 .status()?;
             if !status.success() {
@@ -254,7 +268,14 @@ pub(crate) fn clipboard_inject_rich_x11(content: &RichContent) -> Result<(), Inj
         let path = std::path::Path::new(image_path);
         if path.exists() {
             let status = Command::new("xclip")
-                .args(["-selection", "clipboard", "-target", "image/png", "-i", image_path])
+                .args([
+                    "-selection",
+                    "clipboard",
+                    "-target",
+                    "image/png",
+                    "-i",
+                    image_path,
+                ])
                 .status()?;
             if !status.success() {
                 warn!("xclip image failed");

@@ -13,12 +13,17 @@ use types::ClipItem;
 
 /// Display server type detected at runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Display-server detection is unused: the xclip poller in `wayland` reads the
+// selection identically under X11 and XWayland, so nothing branches on this.
+// Retained for a future event-driven backend.
+#[allow(dead_code)]
 pub enum DisplayServer {
     Wayland,
     X11,
 }
 
 /// Detect the active display server from environment variables.
+#[allow(dead_code)]
 pub fn detect_display_server() -> DisplayServer {
     if std::env::var("WAYLAND_DISPLAY").is_ok() {
         DisplayServer::Wayland
@@ -38,6 +43,9 @@ pub trait ClipboardBackend: Send + Sync {
     fn start_monitoring(&self, tx: mpsc::Sender<ClipItem>) -> Result<(), ClipboardError>;
 
     /// Set the system clipboard to the given content.
+    // Backends only capture today; re-copying goes through the `copy_to_clipboard`
+    // command, which shells out to xclip directly.
+    #[allow(dead_code)]
     fn set_clipboard(&self, content: &str) -> Result<(), ClipboardError>;
 }
 
@@ -49,5 +57,7 @@ pub enum ClipboardError {
     #[error("Clipboard tool not found: {0}")]
     ToolNotFound(String),
     #[error("Clipboard operation failed: {0}")]
+    // Reserved for backends that report operation failures.
+    #[allow(dead_code)]
     OperationFailed(String),
 }

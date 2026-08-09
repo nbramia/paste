@@ -2,18 +2,18 @@
 
 mod clipboard_inject;
 pub mod virtual_keyboard;
+mod wtype;
 mod xdotool;
 mod ydotool;
-mod wtype;
 
-use std::process::Command;
 use log::{info, warn};
+use std::process::Command;
 
 pub use clipboard_inject::ClipboardInjector;
 pub use clipboard_inject::RichContent;
+pub use wtype::WtypeInjector;
 pub use xdotool::XdotoolInjector;
 pub use ydotool::YdotoolInjector;
-pub use wtype::WtypeInjector;
 
 /// Trait for text injection backends.
 pub trait Injector: Send + Sync {

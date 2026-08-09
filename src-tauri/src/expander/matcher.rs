@@ -12,6 +12,8 @@ pub struct MatchResult {
     pub snippet_id: String,
     pub abbreviation: String,
     pub content: String,
+    // Carried through from storage; matching does not key off content type yet.
+    #[allow(dead_code)]
     pub content_type: String,
 }
 
@@ -55,11 +57,14 @@ impl AbbreviationMatcher {
     }
 
     /// Get the number of registered abbreviations.
+    // Used by this module's unit tests.
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.abbreviations.len()
     }
 
     /// Check if there are no registered abbreviations.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.abbreviations.is_empty()
     }

@@ -1,6 +1,6 @@
-use std::process::Command;
-use log::debug;
 use super::{Injector, InjectorError};
+use log::debug;
+use std::process::Command;
 
 /// Injects text via wtype (Wayland -- wlroots compositors only: Sway, Hyprland, etc.).
 pub struct WtypeInjector;
@@ -9,9 +9,7 @@ impl Injector for WtypeInjector {
     fn inject_text(&self, text: &str) -> Result<(), InjectorError> {
         debug!("wtype: injecting {} chars", text.len());
 
-        let status = Command::new("wtype")
-            .args(["--", text])
-            .status()?;
+        let status = Command::new("wtype").args(["--", text]).status()?;
 
         if !status.success() {
             return Err(InjectorError::Failed(format!(
@@ -36,9 +34,7 @@ impl Injector for WtypeInjector {
         debug!("wtype: sending {} backspaces", count);
 
         for _ in 0..count {
-            let status = Command::new("wtype")
-                .args(["-k", "BackSpace"])
-                .status()?;
+            let status = Command::new("wtype").args(["-k", "BackSpace"]).status()?;
 
             if !status.success() {
                 return Err(InjectorError::Failed("wtype -k BackSpace failed".into()));
@@ -48,7 +44,10 @@ impl Injector for WtypeInjector {
         Ok(())
     }
 
-    fn inject_rich(&self, content: &super::clipboard_inject::RichContent) -> Result<(), InjectorError> {
+    fn inject_rich(
+        &self,
+        content: &super::clipboard_inject::RichContent,
+    ) -> Result<(), InjectorError> {
         use super::clipboard_inject::clipboard_inject_rich_wayland;
         clipboard_inject_rich_wayland(content, "wtype")
     }

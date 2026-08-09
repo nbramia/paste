@@ -1,7 +1,7 @@
 //! Paste Stack — ordered queue for sequential copy-then-paste workflows.
 
-use std::sync::Mutex;
 use crate::storage::models::Clip;
+use std::sync::Mutex;
 
 /// In-memory paste stack for sequential paste operations.
 pub struct PasteStack {

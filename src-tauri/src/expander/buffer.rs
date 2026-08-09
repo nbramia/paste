@@ -32,6 +32,8 @@ impl CharBuffer {
     }
 
     /// Check if the buffer ends with the given string.
+    // Buffer introspection used by this module's unit tests.
+    #[allow(dead_code)]
     pub fn ends_with(&self, suffix: &str) -> bool {
         let suffix_chars: Vec<char> = suffix.chars().collect();
         if suffix_chars.len() > self.chars.len() {
@@ -47,11 +49,13 @@ impl CharBuffer {
     }
 
     /// Get the number of characters in the buffer.
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.chars.len()
     }
 
     /// Check if the buffer is empty.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.chars.is_empty()
     }

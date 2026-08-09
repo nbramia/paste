@@ -7,5 +7,3 @@ pub mod import;
 pub mod keymap;
 pub mod matcher;
 pub mod template;
-
-pub use engine::ExpanderEngine;

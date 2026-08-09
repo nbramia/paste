@@ -77,6 +77,8 @@ pub fn is_service_installed() -> bool {
 }
 
 /// Check if the service is currently active (running).
+// Service status is surfaced by checking the unit file, not by querying systemd.
+#[allow(dead_code)]
 pub fn is_service_active() -> bool {
     Command::new("systemctl")
         .args(["--user", "is-active", "--quiet", "paste.service"])

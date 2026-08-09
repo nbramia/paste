@@ -1,6 +1,6 @@
-use std::process::Command;
-use log::debug;
 use super::{Injector, InjectorError};
+use log::debug;
+use std::process::Command;
 
 /// Injects text via ydotool (Wayland -- universal, requires ydotoold).
 pub struct YdotoolInjector;
@@ -50,7 +50,10 @@ impl Injector for YdotoolInjector {
         Ok(())
     }
 
-    fn inject_rich(&self, content: &super::clipboard_inject::RichContent) -> Result<(), InjectorError> {
+    fn inject_rich(
+        &self,
+        content: &super::clipboard_inject::RichContent,
+    ) -> Result<(), InjectorError> {
         use super::clipboard_inject::clipboard_inject_rich_wayland;
         clipboard_inject_rich_wayland(content, "ydotool")
     }

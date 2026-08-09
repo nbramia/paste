@@ -205,6 +205,8 @@ pub fn run_migrations(
 }
 
 /// Get the current schema version.
+// Diagnostic helper; migrations read the version inline. Covered by tests.
+#[allow(dead_code)]
 pub fn get_schema_version(conn: &Connection) -> Result<u32, StorageError> {
     // Check if schema_version table exists
     let exists: bool = conn.query_row(

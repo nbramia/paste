@@ -13,18 +13,26 @@ mod service;
 mod storage;
 mod tray;
 
-use std::collections::HashMap;
-use std::time::Instant;
-use std::sync::{Arc, Mutex};
-use storage::{Storage, models::{Clip, ClipFilters, NewClip, Pinboard, NewPinboard, Snippet, NewSnippet, UpdateSnippet, SnippetGroup, NewSnippetGroup, StorageStats}};
-use injector::{select_injector, Injector, RichContent};
-use config::AppConfig;
-use clipboard::ClipboardBackend;
 use clipboard::detection::{compute_hash, detect_text_content_type};
 use clipboard::stack::PasteStack;
-use expander::template::{FillInField, parse_template, extract_fill_in_fields, evaluate_tokens, ExpansionContext};
-use expander::import::{ImportedSnippet, ImportResult, parse_espanso_dir, default_espanso_path};
-use expander::export::{build_export, parse_import, has_script_snippets, JsonImportResult};
+use clipboard::ClipboardBackend;
+use config::AppConfig;
+use expander::export::{build_export, has_script_snippets, parse_import, JsonImportResult};
+use expander::import::{default_espanso_path, parse_espanso_dir, ImportResult, ImportedSnippet};
+use expander::template::{
+    evaluate_tokens, extract_fill_in_fields, parse_template, ExpansionContext, FillInField,
+};
+use injector::{select_injector, Injector, RichContent};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use storage::{
+    models::{
+        Clip, ClipFilters, NewClip, NewPinboard, NewSnippet, NewSnippetGroup, Pinboard, Snippet,
+        SnippetGroup, StorageStats, UpdateSnippet,
+    },
+    Storage,
+};
 
 /// Channel sender for showing the overlay from the hotkey thread.
 struct ShowOverlaySender(std::sync::Mutex<mpsc::Sender<()>>);
@@ -56,7 +64,8 @@ fn get_clips(
         pinboard_id,
         is_favorite,
     };
-    let result = state.storage
+    let result = state
+        .storage
         .get_clips(offset, limit, &filters)
         .map_err(|e| e.to_string());
     let elapsed = start.elapsed();
@@ -90,7 +99,8 @@ fn paste_clip(
     let start = Instant::now();
 
     // Get the clip from storage
-    let clip = state.storage
+    let clip = state
+        .storage
         .get_clip_by_id(&id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Clip not found: {}", id))?;
@@ -104,12 +114,14 @@ fn paste_clip(
 
     hide_overlay_for_paste(&app);
 
-    state.injector
+    state
+        .injector
         .inject_rich(&rich_content)
         .map_err(|e| e.to_string())?;
 
     // Increment access count
-    state.storage
+    state
+        .storage
         .increment_access_count(&id)
         .map_err(|e| e.to_string())?;
 
@@ -128,31 +140,32 @@ fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn copy_to_clipboard(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
-    let clip = state.storage
+fn copy_to_clipboard(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+    let clip = state
+        .storage
         .get_clip_by_id(&id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Clip not found: {}", id))?;
 
     if let Some(ref text) = clip.text_content {
         // Use xclip to set clipboard (doesn't simulate paste, just copies)
-        use std::process::{Command, Stdio};
         use std::io::Write;
+        use std::process::{Command, Stdio};
         let mut child = Command::new("xclip")
             .args(["-selection", "clipboard"])
             .stdin(Stdio::piped())
             .spawn()
             .map_err(|e| e.to_string())?;
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|e| e.to_string())?;
         }
         child.wait().map_err(|e| e.to_string())?;
     }
 
-    state.storage
+    state
+        .storage
         .increment_access_count(&id)
         .map_err(|e| e.to_string())?;
 
@@ -160,15 +173,14 @@ fn copy_to_clipboard(
 }
 
 #[tauri::command]
-fn delete_clip(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
-    state.storage
-        .delete_clip(&id)
-        .map_err(|e| e.to_string())
+fn delete_clip(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+    state.storage.delete_clip(&id).map_err(|e| e.to_string())
 }
 
+// Tauri deserializes command arguments positionally from the JS call site,
+// so grouping these into a struct would change the IPC contract for every
+// caller. The width is inherent to the command surface, not a smell.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 fn search_clips(
     state: tauri::State<'_, AppState>,
@@ -189,7 +201,8 @@ fn search_clips(
         pinboard_id,
         is_favorite,
     };
-    let result = state.storage
+    let result = state
+        .storage
         .search_clips(&query, &filters)
         .map_err(|e| e.to_string());
     let elapsed = start.elapsed();
@@ -203,18 +216,15 @@ fn search_clips(
 }
 
 #[tauri::command]
-fn get_source_apps(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<String>, String> {
-    state.storage
+fn get_source_apps(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    state
+        .storage
         .get_distinct_source_apps()
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn list_pinboards(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<Pinboard>, String> {
+fn list_pinboards(state: tauri::State<'_, AppState>) -> Result<Vec<Pinboard>, String> {
     state.storage.list_pinboards().map_err(|e| e.to_string())
 }
 
@@ -224,8 +234,15 @@ fn create_pinboard(
     name: String,
     color: String,
 ) -> Result<Pinboard, String> {
-    let new_pb = NewPinboard { name, color, icon: None };
-    state.storage.create_pinboard(&new_pb).map_err(|e| e.to_string())
+    let new_pb = NewPinboard {
+        name,
+        color,
+        icon: None,
+    };
+    state
+        .storage
+        .create_pinboard(&new_pb)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -235,15 +252,18 @@ fn update_pinboard(
     name: String,
     color: String,
 ) -> Result<Pinboard, String> {
-    state.storage.update_pinboard(&id, &name, &color, None).map_err(|e| e.to_string())
+    state
+        .storage
+        .update_pinboard(&id, &name, &color, None)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn delete_pinboard(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
-    state.storage.delete_pinboard(&id).map_err(|e| e.to_string())
+fn delete_pinboard(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+    state
+        .storage
+        .delete_pinboard(&id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -252,7 +272,10 @@ fn add_clip_to_pinboard(
     clip_id: String,
     pinboard_id: String,
 ) -> Result<(), String> {
-    state.storage.update_clip_pinboard(&clip_id, Some(&pinboard_id)).map_err(|e| e.to_string())
+    state
+        .storage
+        .update_clip_pinboard(&clip_id, Some(&pinboard_id))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -260,35 +283,40 @@ fn remove_clip_from_pinboard(
     state: tauri::State<'_, AppState>,
     clip_id: String,
 ) -> Result<(), String> {
-    state.storage.update_clip_pinboard(&clip_id, None).map_err(|e| e.to_string())
+    state
+        .storage
+        .update_clip_pinboard(&clip_id, None)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn quick_paste(
-    state: tauri::State<'_, AppState>,
-    n: usize,
-) -> Result<(), String> {
+fn quick_paste(state: tauri::State<'_, AppState>, n: usize) -> Result<(), String> {
     if n == 0 || n > 9 {
         return Err("Quick paste index must be between 1 and 9".into());
     }
 
     // Get the Nth most recent clip (n=1 means most recent, offset=0)
-    let clips = state.storage
+    let clips = state
+        .storage
         .get_clips(n - 1, 1, &ClipFilters::default())
         .map_err(|e| e.to_string())?;
 
-    let clip = clips.into_iter().next()
+    let clip = clips
+        .into_iter()
+        .next()
         .ok_or_else(|| format!("No clip at position {}", n))?;
 
     // Inject the text content
     if let Some(ref text) = clip.text_content {
-        state.injector
+        state
+            .injector
             .inject_via_clipboard(text)
             .map_err(|e| e.to_string())?;
     }
 
     // Increment access count
-    state.storage
+    state
+        .storage
         .increment_access_count(&clip.id)
         .map_err(|e| e.to_string())?;
 
@@ -296,33 +324,25 @@ fn quick_paste(
 }
 
 #[tauri::command]
-fn toggle_paste_stack(
-    state: tauri::State<'_, AppState>,
-) -> Result<bool, String> {
+fn toggle_paste_stack(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     let active = state.paste_stack.toggle();
     Ok(active)
 }
 
 #[tauri::command]
-fn get_paste_stack(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<Clip>, String> {
+fn get_paste_stack(state: tauri::State<'_, AppState>) -> Result<Vec<Clip>, String> {
     Ok(state.paste_stack.get_all())
 }
 
 #[tauri::command]
-fn get_paste_stack_status(
-    state: tauri::State<'_, AppState>,
-) -> Result<(bool, usize), String> {
+fn get_paste_stack_status(state: tauri::State<'_, AppState>) -> Result<(bool, usize), String> {
     Ok((state.paste_stack.is_active(), state.paste_stack.len()))
 }
 
 #[tauri::command]
-fn add_to_paste_stack(
-    state: tauri::State<'_, AppState>,
-    clip_id: String,
-) -> Result<(), String> {
-    let clip = state.storage
+fn add_to_paste_stack(state: tauri::State<'_, AppState>, clip_id: String) -> Result<(), String> {
+    let clip = state
+        .storage
         .get_clip_by_id(&clip_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Clip not found: {}", clip_id))?;
@@ -331,9 +351,7 @@ fn add_to_paste_stack(
 }
 
 #[tauri::command]
-fn pop_paste_stack(
-    state: tauri::State<'_, AppState>,
-) -> Result<Option<String>, String> {
+fn pop_paste_stack(state: tauri::State<'_, AppState>) -> Result<Option<String>, String> {
     let clip = state.paste_stack.pop_next();
 
     // If stack is now empty, auto-deactivate
@@ -344,11 +362,13 @@ fn pop_paste_stack(
     // If we got a clip, inject it
     if let Some(ref clip) = clip {
         if let Some(ref text) = clip.text_content {
-            state.injector
+            state
+                .injector
                 .inject_via_clipboard(text)
                 .map_err(|e| e.to_string())?;
         }
-        state.storage
+        state
+            .storage
             .increment_access_count(&clip.id)
             .map_err(|e| e.to_string())?;
     }
@@ -378,9 +398,7 @@ fn reorder_paste_stack(
 }
 
 #[tauri::command]
-fn clear_paste_stack(
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
+fn clear_paste_stack(state: tauri::State<'_, AppState>) -> Result<(), String> {
     state.paste_stack.deactivate();
     Ok(())
 }
@@ -390,7 +408,10 @@ fn list_snippets(
     state: tauri::State<'_, AppState>,
     group_id: Option<String>,
 ) -> Result<Vec<Snippet>, String> {
-    state.storage.list_snippets(group_id.as_deref()).map_err(|e| e.to_string())
+    state
+        .storage
+        .list_snippets(group_id.as_deref())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -411,9 +432,16 @@ fn create_snippet(
         group_id,
         description,
     };
-    state.storage.create_snippet(&new).map_err(|e| e.to_string())
+    state
+        .storage
+        .create_snippet(&new)
+        .map_err(|e| e.to_string())
 }
 
+// Tauri deserializes command arguments positionally from the JS call site,
+// so grouping these into a struct would change the IPC contract for every
+// caller. The width is inherent to the command surface, not a smell.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 fn update_snippet(
     state: tauri::State<'_, AppState>,
@@ -433,22 +461,23 @@ fn update_snippet(
         group_id,
         description,
     };
-    state.storage.update_snippet(&id, &update).map_err(|e| e.to_string())
+    state
+        .storage
+        .update_snippet(&id, &update)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn delete_snippet(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
+fn delete_snippet(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
     state.storage.delete_snippet(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn list_snippet_groups(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<SnippetGroup>, String> {
-    state.storage.list_snippet_groups().map_err(|e| e.to_string())
+fn list_snippet_groups(state: tauri::State<'_, AppState>) -> Result<Vec<SnippetGroup>, String> {
+    state
+        .storage
+        .list_snippet_groups()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -457,15 +486,18 @@ fn create_snippet_group(
     name: String,
 ) -> Result<SnippetGroup, String> {
     let new = NewSnippetGroup { name };
-    state.storage.create_snippet_group(&new).map_err(|e| e.to_string())
+    state
+        .storage
+        .create_snippet_group(&new)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn delete_snippet_group(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
-    state.storage.delete_snippet_group(&id).map_err(|e| e.to_string())
+fn delete_snippet_group(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+    state
+        .storage
+        .delete_snippet_group(&id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -489,9 +521,7 @@ fn expand_with_fill_ins(
 }
 
 #[tauri::command]
-fn preview_espanso_import(
-    path: Option<String>,
-) -> Result<Vec<ImportedSnippet>, String> {
+fn preview_espanso_import(path: Option<String>) -> Result<Vec<ImportedSnippet>, String> {
     let dir = path
         .map(std::path::PathBuf::from)
         .unwrap_or_else(default_espanso_path);
@@ -514,7 +544,10 @@ fn import_espanso(
 
     for snippet in &snippets {
         // Check for duplicate abbreviation
-        match state.storage.get_snippet_by_abbreviation(&snippet.abbreviation) {
+        match state
+            .storage
+            .get_snippet_by_abbreviation(&snippet.abbreviation)
+        {
             Ok(Some(_)) => {
                 skipped += 1;
                 continue;
@@ -549,11 +582,15 @@ fn import_espanso(
 }
 
 #[tauri::command]
-fn export_snippets(
-    state: tauri::State<'_, AppState>,
-) -> Result<String, String> {
-    let snippets = state.storage.list_snippets(None).map_err(|e| e.to_string())?;
-    let groups = state.storage.list_snippet_groups().map_err(|e| e.to_string())?;
+fn export_snippets(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let snippets = state
+        .storage
+        .list_snippets(None)
+        .map_err(|e| e.to_string())?;
+    let groups = state
+        .storage
+        .list_snippet_groups()
+        .map_err(|e| e.to_string())?;
     let export = build_export(&snippets, &groups);
     serde_json::to_string_pretty(&export).map_err(|e| e.to_string())
 }
@@ -573,11 +610,15 @@ fn import_snippets_json(
     for group in &export.groups {
         // Create or find the group (skip "Ungrouped")
         let group_id = if group.name != "Ungrouped" {
-            match state.storage.create_snippet_group(&NewSnippetGroup { name: group.name.clone() }) {
+            match state.storage.create_snippet_group(&NewSnippetGroup {
+                name: group.name.clone(),
+            }) {
                 Ok(g) => Some(g.id),
                 Err(_) => {
                     // Group might already exist -- find it
-                    state.storage.list_snippet_groups()
+                    state
+                        .storage
+                        .list_snippet_groups()
                         .ok()
                         .and_then(|groups| groups.into_iter().find(|g| g.name == group.name))
                         .map(|g| g.id)
@@ -589,7 +630,10 @@ fn import_snippets_json(
 
         for snippet in &group.snippets {
             // Check for duplicate abbreviation
-            match state.storage.get_snippet_by_abbreviation(&snippet.abbreviation) {
+            match state
+                .storage
+                .get_snippet_by_abbreviation(&snippet.abbreviation)
+            {
                 Ok(Some(_)) => {
                     skipped += 1;
                     continue;
@@ -631,7 +675,8 @@ fn update_clip_content(
     id: String,
     content: String,
 ) -> Result<(), String> {
-    state.storage
+    state
+        .storage
         .update_clip_content(&id, &content)
         .map_err(|e| e.to_string())
 }
@@ -647,7 +692,8 @@ fn paste_clips_multi(
     // Collect text content from all clips in order
     let mut texts: Vec<String> = Vec::new();
     for id in &ids {
-        let clip = state.storage
+        let clip = state
+            .storage
             .get_clip_by_id(id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Clip not found: {}", id))?;
@@ -667,12 +713,17 @@ fn paste_clips_multi(
     // Concatenate with newlines and paste
     let combined = texts.join("\n");
     hide_overlay_for_paste(&app);
-    state.injector
+    state
+        .injector
         .inject_via_clipboard(&combined)
         .map_err(|e| e.to_string())?;
 
     let elapsed = start.elapsed();
-    log::debug!("paste_clips_multi: {}ms ({} clips)", elapsed.as_millis(), ids.len());
+    log::debug!(
+        "paste_clips_multi: {}ms ({} clips)",
+        elapsed.as_millis(),
+        ids.len()
+    );
 
     Ok(())
 }
@@ -683,7 +734,8 @@ fn paste_clip_plain(
     state: tauri::State<'_, AppState>,
     id: String,
 ) -> Result<(), String> {
-    let clip = state.storage
+    let clip = state
+        .storage
         .get_clip_by_id(&id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Clip not found: {}", id))?;
@@ -692,12 +744,14 @@ fn paste_clip_plain(
         hide_overlay_for_paste(&app);
         // Plain paste = text-only clipboard injection (no HTML/image MIME).
         // Clipboard + Ctrl+V is far more reliable than typing simulation.
-        state.injector
+        state
+            .injector
             .inject_via_clipboard(text)
             .map_err(|e| e.to_string())?;
     }
 
-    state.storage
+    state
+        .storage
         .increment_access_count(&id)
         .map_err(|e| e.to_string())?;
 
@@ -705,27 +759,20 @@ fn paste_clip_plain(
 }
 
 #[tauri::command]
-fn toggle_favorite(
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<bool, String> {
-    state.storage
+fn toggle_favorite(state: tauri::State<'_, AppState>, id: String) -> Result<bool, String> {
+    state
+        .storage
         .toggle_favorite(&id)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn get_excluded_apps(
-    state: tauri::State<'_, AppState>,
-) -> Vec<String> {
+fn get_excluded_apps(state: tauri::State<'_, AppState>) -> Vec<String> {
     state.excluded_apps.lock().unwrap().clone()
 }
 
 #[tauri::command]
-fn add_excluded_app(
-    state: tauri::State<'_, AppState>,
-    app_name: String,
-) -> Vec<String> {
+fn add_excluded_app(state: tauri::State<'_, AppState>, app_name: String) -> Vec<String> {
     let mut apps = state.excluded_apps.lock().unwrap();
     let lower = app_name.to_lowercase();
     if !apps.iter().any(|a| a.to_lowercase() == lower) {
@@ -735,10 +782,7 @@ fn add_excluded_app(
 }
 
 #[tauri::command]
-fn remove_excluded_app(
-    state: tauri::State<'_, AppState>,
-    app_name: String,
-) -> Vec<String> {
+fn remove_excluded_app(state: tauri::State<'_, AppState>, app_name: String) -> Vec<String> {
     let mut apps = state.excluded_apps.lock().unwrap();
     let lower = app_name.to_lowercase();
     apps.retain(|a| a.to_lowercase() != lower);
@@ -746,27 +790,27 @@ fn remove_excluded_app(
 }
 
 #[tauri::command]
-fn get_storage_stats(
-    state: tauri::State<'_, AppState>,
-) -> Result<StorageStats, String> {
+fn get_storage_stats(state: tauri::State<'_, AppState>) -> Result<StorageStats, String> {
     state.storage.get_storage_stats().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn run_retention(
-    state: tauri::State<'_, AppState>,
-) -> Result<usize, String> {
+fn run_retention(state: tauri::State<'_, AppState>) -> Result<usize, String> {
     let max_days = Some(90u32);
     let max_count = Some(10000usize);
-    state.storage.enforce_retention(max_days, max_count).map_err(|e| e.to_string())
+    state
+        .storage
+        .enforce_retention(max_days, max_count)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn clear_all_history(
-    state: tauri::State<'_, AppState>,
-) -> Result<usize, String> {
+fn clear_all_history(state: tauri::State<'_, AppState>) -> Result<usize, String> {
     // Delete all non-pinboard, non-favorite clips
-    state.storage.enforce_retention(None, Some(0)).map_err(|e| e.to_string())
+    state
+        .storage
+        .enforce_retention(None, Some(0))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -804,9 +848,8 @@ fn create_clip_from_text(
     content_type: Option<String>,
 ) -> Result<Clip, String> {
     let hash = compute_hash(text.as_bytes());
-    let detected_type = content_type.unwrap_or_else(|| {
-        detect_text_content_type(&text).as_str().to_string()
-    });
+    let detected_type =
+        content_type.unwrap_or_else(|| detect_text_content_type(&text).as_str().to_string());
 
     let new_clip = NewClip {
         content_type: detected_type,
@@ -820,7 +863,10 @@ fn create_clip_from_text(
         metadata: None,
     };
 
-    state.storage.insert_clip(&new_clip).map_err(|e| e.to_string())
+    state
+        .storage
+        .insert_clip(&new_clip)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -853,7 +899,10 @@ pub fn run() {
     // Initialize storage with fallback to in-memory on failure
     let storage = match Storage::new(Some(config.resolved_db_path())) {
         Ok(s) => {
-            log::info!("Storage initialized at {}", config.resolved_db_path().display());
+            log::info!(
+                "Storage initialized at {}",
+                config.resolved_db_path().display()
+            );
             s
         }
         Err(e) => {
@@ -874,7 +923,10 @@ pub fn run() {
             i
         }
         Err(e) => {
-            log::error!("Failed to initialize injector ({}): {e}", config.injection.method);
+            log::error!(
+                "Failed to initialize injector ({}): {e}",
+                config.injection.method
+            );
             log::info!("Falling back to clipboard injector");
             select_injector("clipboard").expect("Failed to create clipboard injector")
         }
@@ -1102,7 +1154,7 @@ pub fn run() {
 
             // Start hotkey daemon + text expander
             {
-                use hotkey::daemon::{HotkeyDaemon, HotkeyAction, KeystrokeEvent};
+                use hotkey::daemon::{HotkeyDaemon, HotkeyAction};
                 use expander::engine::{ExpanderEngine, TriggerMode, ExpanderAction};
 
                 let hk_config = config::AppConfig::load().unwrap_or_default();

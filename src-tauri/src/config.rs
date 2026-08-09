@@ -191,6 +191,9 @@ impl AppConfig {
     }
 
     /// Load from a specific path (for testing).
+    // The app loads config through `load()`; these three are exercised by the unit
+    // tests in this module.
+    #[allow(dead_code)]
     pub fn load_from(path: &std::path::Path) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path)?;
         let config: Self = toml::from_str(&content)?;
@@ -199,6 +202,7 @@ impl AppConfig {
     }
 
     /// Parse config from a TOML string (for testing).
+    #[allow(dead_code)]
     pub fn from_toml(toml_str: &str) -> Result<Self, ConfigError> {
         let config: Self = toml::from_str(toml_str)?;
         config.validate()?;
@@ -219,6 +223,7 @@ impl AppConfig {
     }
 
     /// Resolve the image_dir, expanding ~ to home directory.
+    #[allow(dead_code)]
     pub fn resolved_image_dir(&self) -> PathBuf {
         expand_tilde(&self.storage.image_dir)
     }
@@ -301,7 +306,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = AppConfig::default();
-        assert_eq!(config.hotkeys.toggle_overlay, "Super+V");
+        assert_eq!(config.hotkeys.toggle_overlay, "Ctrl+Alt+V");
         assert_eq!(config.hotkeys.paste_stack_mode, "Super+Shift+V");
         assert_eq!(config.clipboard.monitor_primary, true);
         assert_eq!(config.clipboard.monitor_clipboard, true);
@@ -322,7 +327,7 @@ mod tests {
     fn test_from_empty_toml() {
         // Empty TOML should give all defaults
         let config = AppConfig::from_toml("").unwrap();
-        assert_eq!(config.hotkeys.toggle_overlay, "Super+V");
+        assert_eq!(config.hotkeys.toggle_overlay, "Ctrl+Alt+V");
         assert_eq!(config.storage.max_history_days, 90);
     }
 
@@ -342,7 +347,7 @@ enabled = false
         assert_eq!(config.ui.filmstrip_height, 400);
         assert_eq!(config.ui.cards_visible, 6); // default
         assert_eq!(config.expander.enabled, false);
-        assert_eq!(config.hotkeys.toggle_overlay, "Super+V"); // default
+        assert_eq!(config.hotkeys.toggle_overlay, "Ctrl+Alt+V"); // default
     }
 
     #[test]

@@ -63,9 +63,12 @@ impl WaylandClipboard {
             .args([
                 "call",
                 "--session",
-                "--dest", "org.gnome.Shell",
-                "--object-path", "/org/gnome/shell/extensions/FocusedWindow",
-                "--method", "org.gnome.shell.extensions.FocusedWindow.Get",
+                "--dest",
+                "org.gnome.Shell",
+                "--object-path",
+                "/org/gnome/shell/extensions/FocusedWindow",
+                "--method",
+                "org.gnome.shell.extensions.FocusedWindow.Get",
             ])
             .output()
         {
@@ -77,7 +80,9 @@ impl WaylandClipboard {
                         if let Some(end) = text[start + 1..].find('\'') {
                             let json_str = &text[start + 1..start + 1 + end];
                             if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
-                                if let Some(wm_class) = json.get("wm_class").and_then(|v| v.as_str()) {
+                                if let Some(wm_class) =
+                                    json.get("wm_class").and_then(|v| v.as_str())
+                                {
                                     if !wm_class.is_empty() {
                                         // Clean up the class name (e.g., "dev.warp.Warp" → "Warp")
                                         let name = wm_class.rsplit('.').next().unwrap_or(wm_class);
@@ -159,9 +164,7 @@ impl ClipboardBackend for WaylandClipboard {
     }
 
     fn set_clipboard(&self, content: &str) -> Result<(), ClipboardError> {
-        let mut child = Command::new("wl-copy")
-            .stdin(Stdio::piped())
-            .spawn()?;
+        let mut child = Command::new("wl-copy").stdin(Stdio::piped()).spawn()?;
 
         if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
@@ -190,9 +193,14 @@ fn monitor_text_loop(monitor: &WaylandClipboard, tx: mpsc::Sender<ClipItem>) {
 fn reassert_clipboard(content: &str, html: Option<&str>) {
     use std::io::Write;
 
-    // Re-assert plain text
+    // wl-copy forks a daemon to serve the selection and only the foreground
+    // process exits, so `wait()` returns while the daemon lives on. Without
+    // null stdio that daemon inherits — and holds open — our stdout/stderr
+    // for as long as it owns the clipboard.
     match Command::new("wl-copy")
         .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()
     {
         Ok(mut child) => {
@@ -211,6 +219,8 @@ fn reassert_clipboard(content: &str, html: Option<&str>) {
         match Command::new("wl-copy")
             .args(["--type", "text/html"])
             .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
         {
             Ok(mut child) => {
@@ -238,9 +248,13 @@ fn run_text_watcher(
 
     // Use xclip via XWayland — avoids wl-paste subprocess visibility
     // issues that cause desktop side-effects (e.g., trash icon bouncing)
-    let use_xclip = Command::new("xclip").arg("-version")
-        .stdout(Stdio::null()).stderr(Stdio::null())
-        .status().map(|s| s.success()).unwrap_or(false);
+    let use_xclip = Command::new("xclip")
+        .arg("-version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
 
     let tool = if use_xclip { "xclip" } else { "wl-paste" };
     info!("Clipboard polling started (1s interval, using {tool})");
@@ -351,6 +365,8 @@ fn run_text_watcher(
 }
 
 /// Main loop for monitoring image clipboard changes.
+// Dormant alongside the `Image` content type above.
+#[allow(dead_code)]
 fn monitor_image_loop(monitor: &WaylandClipboard, tx: mpsc::Sender<ClipItem>) {
     let mut last_hash: Option<String> = None;
 
@@ -566,12 +582,12 @@ mod tests {
         assert_eq!(find_focused_sway(&json), Some("Google-chrome".into()));
     }
 
-    #[test]
-    fn test_reassert_clipboard_does_not_panic() {
-        // Verify the function doesn't panic with valid input.
-        // wl-copy may not be available in CI, but the function
-        // handles spawn failures gracefully via warn!/debug! logs.
-        reassert_clipboard("test content", None);
-        reassert_clipboard("test content", Some("<b>test</b>"));
-    }
+    // There is deliberately no test for `reassert_clipboard`. The previous
+    // one asserted only "does not panic" while really spawning wl-copy: on any
+    // machine with a compositor it replaced the developer's clipboard with
+    // "test content" and left a wl-copy daemon holding the harness's stdout,
+    // which hangs `cargo test` whenever stdout is a pipe. Per the testing
+    // strategy in architecture.md, anything needing real clipboard access is
+    // mocked; covering this properly means making the subprocess injectable,
+    // which is worth more than the "no panic" assertion was.
 }
