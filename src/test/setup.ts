@@ -17,6 +17,10 @@ Object.defineProperty(window, "matchMedia", {
   })),
 });
 
+// jsdom has no layout engine, so scrollIntoView is unimplemented. Components
+// call it to keep the selected card on screen; make it a no-op spy.
+Element.prototype.scrollIntoView = vi.fn();
+
 // Mock Tauri API
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),

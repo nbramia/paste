@@ -147,6 +147,34 @@ function App() {
     return () => window.removeEventListener("focus", handleFocus);
   }, []);
 
+  const dismissOverlay = useCallback(() => {
+    const win = (window as any).__TAURI__?.window?.getCurrentWindow?.();
+    if (win) {
+      win.hide();
+    } else {
+      // Fallback: use invoke to call a hide command
+      invoke("hide_overlay").catch(() => {});
+    }
+  }, []);
+
+  // Confirming a clip (Enter / double-click) puts it on the clipboard and gets
+  // the overlay out of the way so the user can Ctrl+V into whatever had focus.
+  // Deliberately not an auto-paste — that is `pasteSelected`, which injects
+  // Ctrl+V itself. The overlay stays up if the copy fails, so the failure is
+  // visible rather than silently swallowed.
+  const copyClipAndDismiss = useCallback(
+    async (id: string) => {
+      try {
+        await invoke("copy_to_clipboard", { id });
+      } catch (err) {
+        console.error("Failed to copy:", err);
+        return;
+      }
+      dismissOverlay();
+    },
+    [dismissOverlay],
+  );
+
   const pasteSelected = useCallback(async () => {
     if (displayClips.length === 0) return;
     const clip = displayClips[selectedIndex];
@@ -168,15 +196,10 @@ function App() {
   }, [displayClips]);
 
   const copySelected = useCallback(async () => {
-    if (displayClips.length === 0) return;
     const clip = displayClips[selectedIndex];
     if (!clip) return;
-    try {
-      await invoke("copy_to_clipboard", { id: clip.id });
-    } catch (err) {
-      console.error("Failed to copy:", err);
-    }
-  }, [displayClips, selectedIndex]);
+    await copyClipAndDismiss(clip.id);
+  }, [displayClips, selectedIndex, copyClipAndDismiss]);
 
   const deleteSelected = useCallback(async () => {
     if (displayClips.length === 0) return;
@@ -292,8 +315,15 @@ function App() {
       // Check if search input is focused
       const isSearchFocused = document.activeElement === searchRef.current;
 
+      // Only the history filmstrip is driven by `selectedIndex`. The Pinboards
+      // and Snippets tabs and the Paste Stack own their own selection, so
+      // handling clip keys here would act on the wrong list — pressing Enter
+      // inside a pinboard used to copy an unrelated history clip (#99).
+      const ownsClipKeys = activeTab === "history" && !showPasteStack;
+
       // Ctrl+E to edit selected clip
       if (e.key === "e" && (e.ctrlKey || e.metaKey)) {
+        if (!ownsClipKeys) return;
         e.preventDefault();
         const clip = displayClips[selectedIndex];
         if (clip && (clip.content_type === "text" || clip.content_type === "code")) {
@@ -304,6 +334,7 @@ function App() {
 
       // Ctrl+P to open pinboard picker
       if (e.key === "p" && (e.ctrlKey || e.metaKey)) {
+        if (!ownsClipKeys) return;
         e.preventDefault();
         if (displayClips.length > 0 && displayClips[selectedIndex]) {
           setShowPinboardPicker(true);
@@ -340,6 +371,10 @@ function App() {
       // When search is focused, allow arrow keys, Enter, and Escape through
       // Block Space, F, Delete etc. so they type into the search bar
       if (isSearchFocused && !["ArrowLeft", "ArrowRight", "Enter", "Escape"].includes(e.key)) return;
+
+      // Escape (dismiss) and Tab (cycle tabs) stay global; every other key in
+      // the switch below acts on the history filmstrip's selection.
+      if (!ownsClipKeys && e.key !== "Escape" && e.key !== "Tab") return;
 
       switch (e.key) {
         case " ": // Space — Quick Look preview
@@ -413,7 +448,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [displayClips, selectedIndex, multiSelectedIds, pasteSelected, pastePlainSelected, deleteSelected, toggleFavoriteSelected, showPreview, showEditor, isSearching, handleClearSearch]);
+  }, [displayClips, selectedIndex, multiSelectedIds, activeTab, showPasteStack, copySelected, pasteSelected, pastePlainSelected, deleteSelected, toggleFavoriteSelected, dismissOverlay, showPreview, showEditor, isSearching, handleClearSearch]);
 
   // Close preview and editor when selection changes
   useEffect(() => {
@@ -436,16 +471,6 @@ function App() {
       });
     }
   }, [selectedIndex]);
-
-  const dismissOverlay = useCallback(() => {
-    const win = (window as any).__TAURI__?.window?.getCurrentWindow?.();
-    if (win) {
-      win.hide();
-    } else {
-      // Fallback: use invoke to call a hide command
-      invoke("hide_overlay").catch(() => {});
-    }
-  }, []);
 
   return (
     <div className="flex h-screen flex-col text-text-primary select-none">
@@ -557,6 +582,7 @@ function App() {
           onCreatePinboard={createPinboard}
           onUpdatePinboard={updatePinboard}
           onDeletePinboard={deletePinboard}
+          onConfirmClip={copyClipAndDismiss}
         />
       ) : activeTab === "snippets" ? (
         <SnippetView

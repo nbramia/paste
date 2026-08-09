@@ -403,6 +403,31 @@ Each card renders based on content type:
 
 Card footer shows: source app icon + name, relative timestamp, content type color indicator.
 
+#### Keyboard Ownership
+
+Multiple views render clip cards, and each keeps its own selection state. To avoid two views acting on the same keypress, keyboard handling is **owned by whichever view is currently showing cards**:
+
+| Scope | Owner | Keys |
+|-------|-------|------|
+| Global | `App` | `Escape` (dismiss), `Tab` / `Alt+Arrow` (switch tabs), `/` and `Ctrl+F` (focus search) |
+| History filmstrip | `App` | Arrows, `Enter`, `Space`, `Delete`/`Backspace`, `f`, `Ctrl+E`, `Ctrl+P` |
+| Pinboard clip strip | `PinboardView` | Arrows, `Enter` |
+
+`App`'s window-level handler computes `ownsClipKeys = activeTab === "history" && !showPasteStack` and stands down for everything except the global keys when that is false. `PinboardView` registers its own window listener only while a pinboard's clips are open. Without this split, `Enter` inside a pinboard operated on the history list's `selectedIndex` and copied an unrelated clip (#99).
+
+Modal dialogs (`CreatePinboardDialog`, `SnippetEditor`, `FillInDialog`) call `stopPropagation()` on keydown, so window-level handlers never see keys typed into a form field.
+
+#### Confirming vs. Pasting
+
+Two distinct actions operate on a selected clip, and they are intentionally different:
+
+| Action | Trigger | Command | Behavior |
+|--------|---------|---------|----------|
+| **Confirm** | `Enter`, double-click | `copy_to_clipboard` | Puts the clip on the clipboard and hides the overlay. The user presses `Ctrl+V` themselves. |
+| **Paste** | Quick Look paste, `Super+N` quick paste, Paste Stack | `paste_clip` / `paste_clip_plain` / `paste_clips_multi` | Hides the overlay, waits 100ms for the compositor to refocus the previous window, then injects `Ctrl+V` (see the Text Injector section). |
+
+Confirm is the common path and is deliberately not an auto-paste: it always works regardless of injection backend, and it leaves the user in control of where the content lands. Both paths hide the overlay first — a visible, focused overlay would otherwise swallow the paste. If the clipboard write fails, the overlay stays up so the failure is visible.
+
 #### Search Architecture
 
 Frontend sends search queries to Rust backend via Tauri command. Backend executes SQLite FTS5 query:

@@ -1,0 +1,200 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
+import App from "../App";
+import { mockClips } from "../test/fixtures";
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
+}));
+
+const mockInvoke = vi.mocked(invoke);
+
+const pinnedClips = mockClips.slice(0, 2).map((c) => ({ ...c, pinboard_id: "pb-1" }));
+
+const pinboards = [
+  { id: "pb-1", name: "Work", color: "#ff0000", icon: null, position: 0, created_at: new Date().toISOString() },
+];
+
+/**
+ * Route invoke() by command name. `get_clips` answers with the pinboard's
+ * clips when scoped, the full history otherwise — mirroring the backend,
+ * where an unscoped query returns pinned clips too.
+ */
+function routeInvoke(cmd: string, args?: any) {
+  switch (cmd) {
+    case "get_clips":
+      return Promise.resolve(args?.pinboardId ? pinnedClips : mockClips);
+    case "list_pinboards":
+      return Promise.resolve(pinboards);
+    case "list_snippets":
+    case "list_snippet_groups":
+      return Promise.resolve([]);
+    default:
+      return Promise.resolve(undefined);
+  }
+}
+
+function callsTo(cmd: string) {
+  return mockInvoke.mock.calls.filter(([name]) => name === cmd);
+}
+
+async function renderApp() {
+  const utils = render(<App />);
+  await waitFor(() => expect(screen.getByText(/Hello, world!/)).toBeInTheDocument());
+  return utils;
+}
+
+async function openPinboardsTab() {
+  fireEvent.click(screen.getByRole("tab", { name: "pinboards" }));
+  await waitFor(() => expect(screen.getByText("Work")).toBeInTheDocument());
+}
+
+describe("App keyboard routing", () => {
+  beforeEach(() => {
+    mockInvoke.mockReset();
+    mockInvoke.mockImplementation(routeInvoke as any);
+  });
+
+  describe("history tab", () => {
+    it("Enter copies the highlighted clip and dismisses the overlay", async () => {
+      await renderApp();
+
+      fireEvent.keyDown(window, { key: "Enter" });
+
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("copy_to_clipboard", { id: mockClips[0].id }),
+      );
+      // No __TAURI__ global in jsdom, so dismissal falls back to the command.
+      await waitFor(() => expect(callsTo("hide_overlay")).toHaveLength(1));
+    });
+
+    it("Enter copies the clip the arrows moved to", async () => {
+      await renderApp();
+
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+      fireEvent.keyDown(window, { key: "Enter" });
+
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("copy_to_clipboard", { id: mockClips[1].id }),
+      );
+    });
+
+    it("keeps the overlay up when the copy fails", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockInvoke.mockImplementation(((cmd: string, args: any) =>
+        cmd === "copy_to_clipboard" ? Promise.reject("no clipboard") : routeInvoke(cmd, args)) as any);
+
+      await renderApp();
+      fireEvent.keyDown(window, { key: "Enter" });
+
+      await waitFor(() => expect(callsTo("copy_to_clipboard")).toHaveLength(1));
+      expect(callsTo("hide_overlay")).toHaveLength(0);
+      consoleError.mockRestore();
+    });
+  });
+
+  describe("pinboards tab", () => {
+    it("Enter does not touch the history list", async () => {
+      await renderApp();
+      await openPinboardsTab();
+
+      // Still on the pinboard *list* — nothing is selectable yet.
+      fireEvent.keyDown(window, { key: "Enter" });
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+
+      await waitFor(() => expect(screen.getByText("Work")).toBeInTheDocument());
+      expect(callsTo("copy_to_clipboard")).toHaveLength(0);
+      expect(callsTo("hide_overlay")).toHaveLength(0);
+    });
+
+    it("Enter inside a pinboard copies that pinboard's clip and dismisses", async () => {
+      await renderApp();
+      await openPinboardsTab();
+
+      fireEvent.click(screen.getByText("Work"));
+      expect(mockInvoke).toHaveBeenCalledWith("get_clips", {
+        offset: 0,
+        limit: 100,
+        pinboardId: "pb-1",
+      });
+      // Wait for the strip to actually render — the invoke above fires before
+      // the clips are in the DOM, and the key handler needs them there.
+      await waitFor(() => expect(screen.getByText(/Hello, world!/)).toBeInTheDocument());
+
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+      fireEvent.keyDown(window, { key: "Enter" });
+
+      await waitFor(() => expect(callsTo("copy_to_clipboard")).toHaveLength(1));
+      expect(mockInvoke).toHaveBeenCalledWith("copy_to_clipboard", { id: pinnedClips[1].id });
+      await waitFor(() => expect(callsTo("hide_overlay")).toHaveLength(1));
+    });
+
+    it("Delete does not delete a history clip", async () => {
+      await renderApp();
+      await openPinboardsTab();
+
+      fireEvent.keyDown(window, { key: "Delete" });
+      fireEvent.keyDown(window, { key: "Backspace" });
+
+      expect(callsTo("delete_clip")).toHaveLength(0);
+    });
+
+    it("f does not favorite a history clip", async () => {
+      await renderApp();
+      await openPinboardsTab();
+
+      fireEvent.keyDown(window, { key: "f" });
+
+      expect(callsTo("toggle_favorite")).toHaveLength(0);
+    });
+
+    it("Ctrl+P does not open the pinboard picker for a history clip", async () => {
+      await renderApp();
+      await openPinboardsTab();
+
+      fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+
+      expect(screen.queryByText("Save to Pinboard")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("global keys still work off the history tab", () => {
+    it("Tab cycles tabs from the pinboards tab", async () => {
+      await renderApp();
+      await openPinboardsTab();
+
+      fireEvent.keyDown(window, { key: "Tab" });
+
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "snippets" })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        ),
+      );
+    });
+
+    it("Alt+ArrowRight cycles tabs from the pinboards tab", async () => {
+      await renderApp();
+      await openPinboardsTab();
+
+      fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
+
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "snippets" })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        ),
+      );
+    });
+
+    it("Escape dismisses the overlay from the pinboards tab", async () => {
+      await renderApp();
+      await openPinboardsTab();
+
+      fireEvent.keyDown(window, { key: "Escape" });
+
+      await waitFor(() => expect(callsTo("hide_overlay")).toHaveLength(1));
+    });
+  });
+});

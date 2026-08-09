@@ -87,5 +87,6 @@ The `/implement` orchestrator writes review findings to `/tmp/paste-implement-fi
 - Every Tauri command must be registered in `invoke_handler` in lib.rs
 - Every new CSS color must be a theme token in `@theme` block — no hardcoded hex in components
 - Schema changes require a new migration in `storage/migrations.rs`
+- Maintain documentation as you go — a change that alters behavior, adds a component boundary, or invalidates something in `architecture.md` / `vision.md` / this file updates those docs in the same PR, not later
 - New snippets should be loaded into the expander matcher on change
 - Destructive git operations are blocked by hooks — use the PR workflow
