@@ -92,7 +92,10 @@ html {
 }
 
 body {
-  background: #000;
+  /* Transparent so the desktop shows through above the filmstrip. The window
+     is maximized, not fullscreen — GNOME composites fullscreen surfaces
+     against an opaque black backdrop, which defeats transparency. */
+  background: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;

@@ -112,14 +112,8 @@ impl Injector for ClipboardInjector {
 pub(crate) fn clipboard_inject_wayland(text: &str, key_tool: &str) -> Result<(), InjectorError> {
     debug!("Clipboard inject (Wayland): {} chars via {}", text.len(), key_tool);
 
-    // 1. Save current clipboard
-    let old_clipboard = Command::new("wl-paste")
-        .args(["--no-newline"])
-        .output()
-        .ok()
-        .and_then(|o| if o.status.success() { Some(o.stdout) } else { None });
-
-    // 2. Set clipboard to new content
+    // Set clipboard to new content. The pasted content intentionally stays
+    // on the clipboard afterwards so the user can paste it again manually.
     let mut child = Command::new("wl-copy")
         .stdin(std::process::Stdio::piped())
         .spawn()?;
@@ -132,34 +126,21 @@ pub(crate) fn clipboard_inject_wayland(text: &str, key_tool: &str) -> Result<(),
     // Brief delay for clipboard to settle
     thread::sleep(Duration::from_millis(50));
 
-    // 3. Simulate Ctrl+V
-    let status = match key_tool {
-        "wtype" => Command::new("wtype")
-            .args(["-M", "ctrl", "-k", "v", "-m", "ctrl"])
-            .status()?,
-        _ => Command::new("ydotool")
-            // KEY_LEFTCTRL=29, KEY_V=47
-            .args(["key", "29:1", "47:1", "47:0", "29:0"])
-            .status()?,
-    };
+    // 3. Simulate Ctrl+V — prefer the persistent virtual keyboard; fall
+    // back to external tools when uinput is unavailable.
+    if !super::virtual_keyboard::ctrl_v() {
+        let status = match key_tool {
+            "wtype" => Command::new("wtype")
+                .args(["-M", "ctrl", "-k", "v", "-m", "ctrl"])
+                .status()?,
+            _ => Command::new("ydotool")
+                // KEY_LEFTCTRL=29, KEY_V=47
+                .args(["key", "29:1", "47:1", "47:0", "29:0"])
+                .status()?,
+        };
 
-    if !status.success() {
-        warn!("Ctrl+V simulation exited with {}", status);
-    }
-
-    // Brief delay for paste to complete
-    thread::sleep(Duration::from_millis(100));
-
-    // 4. Restore old clipboard
-    if let Some(old) = old_clipboard {
-        if !old.is_empty() {
-            let mut restore = Command::new("wl-copy")
-                .stdin(std::process::Stdio::piped())
-                .spawn()?;
-            if let Some(mut stdin) = restore.stdin.take() {
-                let _ = stdin.write_all(&old);
-            }
-            let _ = restore.wait();
+        if !status.success() {
+            warn!("Ctrl+V simulation exited with {}", status);
         }
     }
 
@@ -170,14 +151,8 @@ pub(crate) fn clipboard_inject_wayland(text: &str, key_tool: &str) -> Result<(),
 pub(crate) fn clipboard_inject_x11(text: &str) -> Result<(), InjectorError> {
     debug!("Clipboard inject (X11): {} chars", text.len());
 
-    // 1. Save current clipboard
-    let old_clipboard = Command::new("xclip")
-        .args(["-selection", "clipboard", "-o"])
-        .output()
-        .ok()
-        .and_then(|o| if o.status.success() { Some(o.stdout) } else { None });
-
-    // 2. Set clipboard to new content
+    // Set clipboard to new content. The pasted content intentionally stays
+    // on the clipboard afterwards so the user can paste it again manually.
     let mut child = Command::new("xclip")
         .args(["-selection", "clipboard"])
         .stdin(std::process::Stdio::piped())
@@ -200,23 +175,6 @@ pub(crate) fn clipboard_inject_x11(text: &str) -> Result<(), InjectorError> {
         warn!("xdotool Ctrl+V exited with {}", status);
     }
 
-    // Brief delay for paste to complete
-    thread::sleep(Duration::from_millis(100));
-
-    // 4. Restore old clipboard
-    if let Some(old) = old_clipboard {
-        if !old.is_empty() {
-            let mut restore = Command::new("xclip")
-                .args(["-selection", "clipboard"])
-                .stdin(std::process::Stdio::piped())
-                .spawn()?;
-            if let Some(mut stdin) = restore.stdin.take() {
-                let _ = stdin.write_all(&old);
-            }
-            let _ = restore.wait();
-        }
-    }
-
     Ok(())
 }
 
@@ -225,14 +183,8 @@ pub(crate) fn clipboard_inject_x11(text: &str) -> Result<(), InjectorError> {
 pub(crate) fn clipboard_inject_rich_wayland(content: &RichContent, key_tool: &str) -> Result<(), InjectorError> {
     debug!("Rich clipboard inject (Wayland)");
 
-    // 1. Save current clipboard
-    let old_clipboard = Command::new("wl-paste")
-        .args(["--no-newline"])
-        .output()
-        .ok()
-        .and_then(|o| if o.status.success() { Some(o.stdout) } else { None });
-
-    // 2. Set clipboard with appropriate MIME type
+    // Set clipboard with appropriate MIME type. The pasted content
+    // intentionally stays on the clipboard afterwards.
     if let Some(ref image_path) = content.image_path {
         // Image paste: set clipboard to image data
         let path = std::path::Path::new(image_path);
@@ -273,32 +225,19 @@ pub(crate) fn clipboard_inject_rich_wayland(content: &RichContent, key_tool: &st
     // 3. Brief delay for clipboard to settle
     thread::sleep(Duration::from_millis(50));
 
-    // 4. Simulate Ctrl+V
-    let status = match key_tool {
-        "wtype" => Command::new("wtype")
-            .args(["-M", "ctrl", "-k", "v", "-m", "ctrl"])
-            .status()?,
-        "ydotool" | _ => Command::new("ydotool")
-            .args(["key", "29:1", "47:1", "47:0", "29:0"])
-            .status()?,
-    };
-    if !status.success() {
-        warn!("Ctrl+V simulation exited with {}", status);
-    }
-
-    // 5. Brief delay for paste to complete
-    thread::sleep(Duration::from_millis(100));
-
-    // 6. Restore old clipboard
-    if let Some(old) = old_clipboard {
-        if !old.is_empty() {
-            let mut restore = Command::new("wl-copy")
-                .stdin(std::process::Stdio::piped())
-                .spawn()?;
-            if let Some(mut stdin) = restore.stdin.take() {
-                let _ = stdin.write_all(&old);
-            }
-            let _ = restore.wait();
+    // 4. Simulate Ctrl+V — prefer the persistent virtual keyboard; fall
+    // back to external tools when uinput is unavailable.
+    if !super::virtual_keyboard::ctrl_v() {
+        let status = match key_tool {
+            "wtype" => Command::new("wtype")
+                .args(["-M", "ctrl", "-k", "v", "-m", "ctrl"])
+                .status()?,
+            _ => Command::new("ydotool")
+                .args(["key", "29:1", "47:1", "47:0", "29:0"])
+                .status()?,
+        };
+        if !status.success() {
+            warn!("Ctrl+V simulation exited with {}", status);
         }
     }
 
@@ -309,14 +248,8 @@ pub(crate) fn clipboard_inject_rich_wayland(content: &RichContent, key_tool: &st
 pub(crate) fn clipboard_inject_rich_x11(content: &RichContent) -> Result<(), InjectorError> {
     debug!("Rich clipboard inject (X11)");
 
-    // 1. Save current clipboard
-    let old_clipboard = Command::new("xclip")
-        .args(["-selection", "clipboard", "-o"])
-        .output()
-        .ok()
-        .and_then(|o| if o.status.success() { Some(o.stdout) } else { None });
-
-    // 2. Set clipboard with appropriate type
+    // Set clipboard with appropriate type. The pasted content intentionally
+    // stays on the clipboard afterwards.
     if let Some(ref image_path) = content.image_path {
         let path = std::path::Path::new(image_path);
         if path.exists() {
@@ -357,21 +290,6 @@ pub(crate) fn clipboard_inject_rich_x11(content: &RichContent) -> Result<(), Inj
         .status()?;
     if !status.success() {
         warn!("xdotool Ctrl+V exited with {}", status);
-    }
-
-    // 4. Restore clipboard
-    thread::sleep(Duration::from_millis(100));
-    if let Some(old) = old_clipboard {
-        if !old.is_empty() {
-            let mut restore = Command::new("xclip")
-                .args(["-selection", "clipboard"])
-                .stdin(std::process::Stdio::piped())
-                .spawn()?;
-            if let Some(mut stdin) = restore.stdin.take() {
-                let _ = stdin.write_all(&old);
-            }
-            let _ = restore.wait();
-        }
     }
 
     Ok(())
