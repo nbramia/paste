@@ -87,10 +87,7 @@ impl Storage {
     }
 
     /// List all snippets, optionally filtered by group_id.
-    pub fn list_snippets(
-        &self,
-        group_id: Option<&str>,
-    ) -> Result<Vec<Snippet>, StorageError> {
+    pub fn list_snippets(&self, group_id: Option<&str>) -> Result<Vec<Snippet>, StorageError> {
         let conn = self.conn.lock().unwrap();
 
         let (sql, params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match group_id {
@@ -237,11 +234,7 @@ impl Storage {
     }
 
     /// Update a snippet group's name.
-    pub fn update_snippet_group(
-        &self,
-        id: &str,
-        name: &str,
-    ) -> Result<SnippetGroup, StorageError> {
+    pub fn update_snippet_group(&self, id: &str, name: &str) -> Result<SnippetGroup, StorageError> {
         let conn = self.conn.lock().unwrap();
         let affected = conn.execute(
             "UPDATE snippet_groups SET name = ?1 WHERE id = ?2",
@@ -252,9 +245,8 @@ impl Storage {
             return Err(StorageError::NotFound(format!("snippet_group {id}")));
         }
 
-        let mut stmt = conn.prepare(
-            "SELECT id, name, position, created_at FROM snippet_groups WHERE id = ?1",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT id, name, position, created_at FROM snippet_groups WHERE id = ?1")?;
         let group = stmt.query_row(params![id], |row| {
             Ok(SnippetGroup {
                 id: row.get(0)?,
@@ -369,9 +361,7 @@ mod tests {
         storage
             .create_snippet(&make_snippet(";a", "Alpha"))
             .unwrap();
-        storage
-            .create_snippet(&make_snippet(";b", "Beta"))
-            .unwrap();
+        storage.create_snippet(&make_snippet(";b", "Beta")).unwrap();
 
         let all = storage.list_snippets(None).unwrap();
         assert_eq!(all.len(), 2);
@@ -528,9 +518,7 @@ mod tests {
             })
             .unwrap();
 
-        let updated = storage
-            .update_snippet_group(&group.id, "New Name")
-            .unwrap();
+        let updated = storage.update_snippet_group(&group.id, "New Name").unwrap();
         assert_eq!(updated.name, "New Name");
     }
 

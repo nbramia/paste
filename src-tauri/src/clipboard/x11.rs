@@ -1,4 +1,14 @@
 //! X11 clipboard monitoring via XFixes extension.
+//!
+//! NOT CURRENTLY WIRED UP. Startup unconditionally builds a
+//! `WaylandClipboard`, whose xclip poller reads the CLIPBOARD selection
+//! identically under X11 and XWayland — so X11 users are served by that path
+//! and nothing constructs the types below. X11 support is not missing; this
+//! event-driven implementation is simply unused.
+//!
+//! Retained because XFixes notification would remove the 1s polling latency
+//! on X11, which is the one thing the xclip poller cannot do.
+#![allow(dead_code)]
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -38,7 +48,11 @@ pub struct X11Clipboard {
 }
 
 impl X11Clipboard {
-    pub fn new(excluded_apps: Vec<String>, max_content_size_mb: u32, monitor_primary: bool) -> Self {
+    pub fn new(
+        excluded_apps: Vec<String>,
+        max_content_size_mb: u32,
+        monitor_primary: bool,
+    ) -> Self {
         Self {
             excluded_apps,
             max_content_size_bytes: max_content_size_mb as u64 * 1024 * 1024,
@@ -135,9 +149,7 @@ impl X11ClipboardMonitor {
         conn.xfixes_query_version(5, 0)
             .map_err(|e| ClipboardError::OperationFailed(format!("XFixes query failed: {e}")))?
             .reply()
-            .map_err(|e| {
-                ClipboardError::OperationFailed(format!("XFixes not available: {e}"))
-            })?;
+            .map_err(|e| ClipboardError::OperationFailed(format!("XFixes not available: {e}")))?;
 
         // Create a window to receive events
         let win = conn.generate_id().map_err(|e| {
@@ -157,9 +169,7 @@ impl X11ClipboardMonitor {
             0, // visual: copy from parent
             &xproto::CreateWindowAux::new(),
         )
-        .map_err(|e| {
-            ClipboardError::OperationFailed(format!("Failed to create window: {e}"))
-        })?;
+        .map_err(|e| ClipboardError::OperationFailed(format!("Failed to create window: {e}")))?;
 
         // Intern atoms we need
         let clipboard_atom = intern_atom(&conn, "CLIPBOARD")?;
@@ -201,9 +211,9 @@ impl X11ClipboardMonitor {
         let mut last_primary_hash: Option<String> = None;
 
         loop {
-            let event = conn.wait_for_event().map_err(|e| {
-                ClipboardError::OperationFailed(format!("X11 event error: {e}"))
-            })?;
+            let event = conn
+                .wait_for_event()
+                .map_err(|e| ClipboardError::OperationFailed(format!("X11 event error: {e}")))?;
 
             // Handle XFixes SelectionNotify — clipboard ownership changed
             if let Event::XfixesSelectionNotify(sel) = event {
@@ -319,19 +329,10 @@ fn read_selection_text(
     property: Atom,
 ) -> Result<Option<String>, ClipboardError> {
     // Request the selection be converted to our target type
-    conn.convert_selection(
-        win,
-        selection,
-        target,
-        property,
-        xproto::Time::CURRENT_TIME,
-    )
-    .map_err(|e| {
-        ClipboardError::OperationFailed(format!("ConvertSelection failed: {e}"))
-    })?;
-    conn.flush().map_err(|e| {
-        ClipboardError::OperationFailed(format!("Flush failed: {e}"))
-    })?;
+    conn.convert_selection(win, selection, target, property, xproto::Time::CURRENT_TIME)
+        .map_err(|e| ClipboardError::OperationFailed(format!("ConvertSelection failed: {e}")))?;
+    conn.flush()
+        .map_err(|e| ClipboardError::OperationFailed(format!("Flush failed: {e}")))?;
 
     // Wait for the SelectionNotify response (with timeout via polling)
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
@@ -343,9 +344,7 @@ fn read_selection_text(
 
         let event = conn
             .poll_for_event()
-            .map_err(|e| {
-                ClipboardError::OperationFailed(format!("Poll event error: {e}"))
-            })?;
+            .map_err(|e| ClipboardError::OperationFailed(format!("Poll event error: {e}")))?;
 
         match event {
             Some(Event::SelectionNotify(notify)) => {
@@ -369,9 +368,7 @@ fn read_selection_text(
                     })?
                     .reply()
                     .map_err(|e| {
-                        ClipboardError::OperationFailed(format!(
-                            "GetProperty reply failed: {e}"
-                        ))
+                        ClipboardError::OperationFailed(format!("GetProperty reply failed: {e}"))
                     })?;
 
                 if reply.value.is_empty() {
@@ -401,14 +398,7 @@ fn get_window_class(conn: &RustConnection, window: Window) -> Option<String> {
     }
 
     let reply = conn
-        .get_property(
-            false,
-            window,
-            AtomEnum::WM_CLASS,
-            AtomEnum::STRING,
-            0,
-            1024,
-        )
+        .get_property(false, window, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 1024)
         .ok()?
         .reply()
         .ok()?;
@@ -444,11 +434,7 @@ mod tests {
 
     #[test]
     fn test_x11_clipboard_new() {
-        let x11 = X11Clipboard::new(
-            vec!["1password".into(), "keepassxc".into()],
-            10,
-            true,
-        );
+        let x11 = X11Clipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true);
         assert_eq!(x11.excluded_apps.len(), 2);
         assert_eq!(x11.max_content_size_bytes, 10 * 1024 * 1024);
         assert!(x11.monitor_primary);
@@ -463,11 +449,7 @@ mod tests {
 
     #[test]
     fn test_is_excluded() {
-        let x11 = X11Clipboard::new(
-            vec!["1password".into(), "keepassxc".into()],
-            10,
-            true,
-        );
+        let x11 = X11Clipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true);
         assert!(x11.is_excluded(&Some("1Password".into())));
         assert!(x11.is_excluded(&Some("KeePassXC".into())));
         assert!(x11.is_excluded(&Some("org.keepassxc.KeePassXC".into())));

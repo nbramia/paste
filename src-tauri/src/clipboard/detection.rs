@@ -6,6 +6,9 @@ pub enum ContentType {
     Text,
     Code,
     Link,
+    // Image capture is disabled (it made the GNOME trash icon bounce); the variant
+    // is retained so re-enabling it does not require reshaping the enum.
+    #[allow(dead_code)]
     Image,
     File,
 }
@@ -172,10 +175,7 @@ mod tests {
 
     #[test]
     fn test_plain_text_not_url() {
-        assert_ne!(
-            detect_text_content_type("hello world"),
-            ContentType::Link
-        );
+        assert_ne!(detect_text_content_type("hello world"), ContentType::Link);
         assert_ne!(
             detect_text_content_type("not a url at all"),
             ContentType::Link
@@ -234,10 +234,7 @@ mod tests {
 
     #[test]
     fn test_single_line_code() {
-        assert_eq!(
-            detect_text_content_type("fn main() {}"),
-            ContentType::Code
-        );
+        assert_eq!(detect_text_content_type("fn main() {}"), ContentType::Code);
         assert_eq!(detect_text_content_type("def hello():"), ContentType::Code);
         assert_eq!(
             detect_text_content_type("#include <stdio.h>"),

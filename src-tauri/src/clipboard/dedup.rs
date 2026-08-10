@@ -1,4 +1,14 @@
 //! Clipboard deduplication: growing text detection and rapid copy debounce.
+//!
+//! NOT CURRENTLY WIRED UP. The capture loop in `wayland.rs` does its own
+//! hash-equality check against the previous clip, which covers exact
+//! duplicates but not the two behaviors implemented here. As a consequence
+//! the `clipboard.merge_growing` and `clipboard.debounce_ms` config keys are
+//! inert — they are read into `Config` and never consulted.
+//!
+//! This module is complete and unit-tested; it needs a `ClipDedup` threaded
+//! through the capture loop, not a rewrite.
+#![allow(dead_code)]
 
 use std::time::{Duration, Instant};
 
@@ -56,19 +66,18 @@ impl ClipDedup {
             if let (Some(ref last_text), Some(last_time)) = (&self.last_text, self.last_time) {
                 let elapsed = now.duration_since(last_time);
 
-                // Growing text detection: new text contains old text as prefix/subset
-                if self.merge_growing
+                // Two independent reasons to fold this into the previous clip:
+                //   - growing text: the new text extends the old one (the user
+                //     widened a selection), so the partial clip is superseded;
+                //   - debounce: a rapid re-copy within the debounce window.
+                let growing = self.merge_growing
                     && elapsed < Duration::from_secs(2)
-                    && is_growing(last_text, text)
-                {
+                    && is_growing(last_text, text);
+                let debounced = elapsed < Duration::from_millis(self.debounce_ms);
+
+                if growing || debounced {
                     DedupResult::Replace
-                }
-                // Rapid copy debounce: within debounce window
-                else if elapsed < Duration::from_millis(self.debounce_ms) {
-                    DedupResult::Replace
-                }
-                // Normal new clip
-                else {
+                } else {
                     DedupResult::Accept
                 }
             } else {
@@ -201,8 +210,8 @@ mod tests {
         let mut dedup = ClipDedup::new(true, 50);
         dedup.check("Hello");
         thread::sleep(Duration::from_millis(100)); // Past debounce but within 2s growing window
-        // Growing text detection has its own 2-second window, independent of debounce.
-        // Since "Hello, world" starts with "Hello" and we're within 2s, this is Replace.
+                                                   // Growing text detection has its own 2-second window, independent of debounce.
+                                                   // Since "Hello, world" starts with "Hello" and we're within 2s, this is Replace.
         assert_eq!(dedup.check("Hello, world"), DedupResult::Replace);
     }
 
@@ -211,7 +220,7 @@ mod tests {
         let mut dedup = ClipDedup::new(true, 50);
         dedup.check("Hello");
         thread::sleep(Duration::from_millis(100)); // Past debounce
-        // Completely different text (not growing) past debounce window -> Accept
+                                                   // Completely different text (not growing) past debounce window -> Accept
         assert_eq!(dedup.check("Goodbye"), DedupResult::Accept);
     }
 

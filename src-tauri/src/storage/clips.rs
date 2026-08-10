@@ -223,11 +223,8 @@ impl Storage {
     pub fn get_storage_stats(&self) -> Result<StorageStats, StorageError> {
         let conn = self.conn.lock().unwrap();
 
-        let total_clips: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM clips",
-            [],
-            |row| row.get(0),
-        )?;
+        let total_clips: i64 =
+            conn.query_row("SELECT COUNT(*) FROM clips", [], |row| row.get(0))?;
 
         let total_pinboard: i64 = conn.query_row(
             "SELECT COUNT(*) FROM clips WHERE pinboard_id IS NOT NULL",
@@ -247,17 +244,13 @@ impl Storage {
             |row| row.get(0),
         )?;
 
-        let oldest_clip: Option<String> = conn.query_row(
-            "SELECT MIN(created_at) FROM clips",
-            [],
-            |row| row.get(0),
-        ).ok();
+        let oldest_clip: Option<String> = conn
+            .query_row("SELECT MIN(created_at) FROM clips", [], |row| row.get(0))
+            .ok();
 
-        let newest_clip: Option<String> = conn.query_row(
-            "SELECT MAX(created_at) FROM clips",
-            [],
-            |row| row.get(0),
-        ).ok();
+        let newest_clip: Option<String> = conn
+            .query_row("SELECT MAX(created_at) FROM clips", [], |row| row.get(0))
+            .ok();
 
         Ok(StorageStats {
             total_clips: total_clips as usize,
@@ -271,7 +264,7 @@ impl Storage {
 
     /// Update the text content of a clip and recompute its hash.
     pub fn update_clip_content(&self, id: &str, new_content: &str) -> Result<(), StorageError> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
 
         let new_hash = format!("{:x}", Sha256::digest(new_content.as_bytes()));
         let new_size = new_content.len() as i64;
@@ -398,14 +391,10 @@ mod tests {
             storage.insert_clip(&clip).unwrap();
         }
 
-        let page1 = storage
-            .get_clips(0, 5, &ClipFilters::default())
-            .unwrap();
+        let page1 = storage.get_clips(0, 5, &ClipFilters::default()).unwrap();
         assert_eq!(page1.len(), 5);
 
-        let page2 = storage
-            .get_clips(5, 5, &ClipFilters::default())
-            .unwrap();
+        let page2 = storage.get_clips(5, 5, &ClipFilters::default()).unwrap();
         assert_eq!(page2.len(), 5);
 
         // Pages should not overlap
@@ -556,12 +545,8 @@ mod tests {
     fn test_uuid_v7_is_time_ordered() {
         let storage = Storage::new_in_memory().unwrap();
 
-        let clip1 = storage
-            .insert_clip(&make_new_clip("a", "ha"))
-            .unwrap();
-        let clip2 = storage
-            .insert_clip(&make_new_clip("b", "hb"))
-            .unwrap();
+        let clip1 = storage.insert_clip(&make_new_clip("a", "ha")).unwrap();
+        let clip2 = storage.insert_clip(&make_new_clip("b", "hb")).unwrap();
 
         // UUID v7 is time-ordered, so clip2.id > clip1.id lexicographically
         assert!(clip2.id > clip1.id);

@@ -57,6 +57,9 @@ impl ExpanderEngine {
     }
 
     /// Get a reference to the enabled flag for toggling from outside.
+    // The expander is toggled through the Tauri command layer, which owns its own
+    // AtomicBool; these accessors are covered by tests but unused in the app.
+    #[allow(dead_code)]
     pub fn enabled_flag(&self) -> Arc<AtomicBool> {
         self.enabled.clone()
     }
@@ -72,13 +75,11 @@ impl ExpanderEngine {
     }
 
     /// Toggle enabled state. Returns new state.
+    #[allow(dead_code)]
     pub fn toggle(&self) -> bool {
         let prev = self.enabled.fetch_xor(true, Ordering::Relaxed);
         let new = !prev;
-        info!(
-            "Text expander {}",
-            if new { "enabled" } else { "disabled" }
-        );
+        info!("Text expander {}", if new { "enabled" } else { "disabled" });
         new
     }
 

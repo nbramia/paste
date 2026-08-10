@@ -99,6 +99,9 @@ impl Storage {
 /// double quotes so that special FTS5 characters (*, -, etc.) are treated
 /// as literals. Tokens are joined with spaces, which FTS5 interprets as
 /// implicit AND.
+// Search currently runs a parameterized LIKE query rather than an FTS5 MATCH,
+// so user input needs no FTS escaping. Retained (and tested) for a return to FTS5.
+#[allow(dead_code)]
 fn sanitize_fts_query(query: &str) -> String {
     let terms: Vec<String> = query
         .split_whitespace()
@@ -174,9 +177,7 @@ mod tests {
             .insert_clip(&make_text_clip("hello world", "h1"))
             .unwrap();
 
-        let results = storage
-            .search_clips("", &ClipFilters::default())
-            .unwrap();
+        let results = storage.search_clips("", &ClipFilters::default()).unwrap();
         assert_eq!(results.len(), 0);
 
         let results = storage

@@ -127,7 +127,9 @@ xclip -selection clipboard -o        -> reads current clipboard text
 - The original design used `wl-paste --watch` for event-driven monitoring, but this was replaced because `wl-paste` caused desktop side-effects on some compositors
 - Re-copying clips to the clipboard uses a `copy_to_clipboard` Tauri command that invokes `xclip -selection clipboard`
 
-#### X11 Implementation
+#### X11 Implementation (written, not currently used)
+
+> **Status:** `clipboard/x11.rs` implements everything below, but nothing constructs it — startup unconditionally builds a `WaylandClipboard`. X11 support is **not** missing: that type is a misleadingly-named xclip poller which reads the CLIPBOARD selection identically under X11 and XWayland. What X11 users do not get is the sub-second capture latency the XFixes path would provide. Tracked in #103.
 
 ```rust
 // Pseudo-code for X11 clipboard monitoring
@@ -150,7 +152,9 @@ loop {
 - Monitors both CLIPBOARD (Ctrl+C) and PRIMARY (mouse selection) selections
 - Reads all available TARGETS to capture multiple representations (text/plain, text/html, image/png, etc.)
 
-#### Display Server Detection
+#### Display Server Detection (written, not currently used)
+
+> **Status:** `detect_display_server` exists and is never called, for the reason above — one polling backend serves both display servers, so there is nothing to dispatch on. The `ClipboardBackend` trait below is implemented by both backends but only ever instantiated as `WaylandClipboard`. Tracked in #103.
 
 ```rust
 fn detect_display_server() -> DisplayServer {
@@ -190,11 +194,13 @@ Code detection heuristic for text/plain: look for patterns like `{`, `=>`, `def 
 
 #### Deduplication
 
-The deduplication module (`clipboard/dedup.rs`) implements two strategies:
+The deduplication module (`clipboard/dedup.rs`) implements three strategies:
 
 1. **Hash-based dedup** — SHA-256 hash of the content. If the hash matches the most recent entry, the duplicate is skipped.
 2. **Growing text detection** — When `merge_growing` is enabled (default), if new content is a superset of the most recent clip (e.g., the user selected a word, then extended the selection to a paragraph), the older partial clip is replaced instead of creating a new entry.
 3. **Debounce** — Rapid consecutive copies within the debounce window (default 500ms) are collapsed.
+
+> **Status:** only strategy 1 is live, and it is implemented inline in the capture loop rather than by this module — `ClipDedup` is never constructed. Strategies 2 and 3 are complete and unit-tested but unreachable, which makes the `clipboard.merge_growing` and `clipboard.debounce_ms` config keys inert. Tracked in #101.
 
 #### Application Exclusion
 
@@ -430,7 +436,11 @@ Confirm is the common path and is deliberately not an auto-paste: it always work
 
 #### Search Architecture
 
-Frontend sends search queries to Rust backend via Tauri command. Backend executes SQLite FTS5 query:
+Frontend sends search queries to Rust backend via Tauri command.
+
+> **Status:** the FTS5 design below is **not** what runs. `Storage::search_clips` executes a parameterized `LIKE '%query%'` scan over `clips.text_content` and `clips.source_app`; the `clips_fts` table and its sync triggers are still created and maintained on every write, but no query reads them. Consequences: no relevance ranking, and each search is a full table scan rather than an index lookup. Not an injection risk — the pattern is bound as a parameter — and substring matching arguably suits short clipboard content better than FTS5 tokenization. Whether to restore FTS5 or drop the unused index is tracked in #102.
+
+The originally designed FTS5 query:
 
 ```sql
 -- Basic search
@@ -518,7 +528,7 @@ Uses the `evdev` crate to capture global keyboard shortcuts regardless of focuse
 
 | Hotkey | Action | Configurable |
 |--------|--------|-------------|
-| Super+Alt+V | Toggle filmstrip overlay (Cmd+Option+V with Toshy) | Yes |
+| Ctrl+Alt+V | Toggle filmstrip overlay (Cmd+Option+V with Toshy) | Yes |
 | Super+Shift+V | Toggle Paste Stack mode | Yes |
 | Super+Shift+C | Quick copy to pinboard | Yes |
 | Ctrl+Alt+Space | Toggle text expander on/off | Yes |
@@ -582,7 +592,7 @@ The original architecture planned to use the `ksni` crate for StatusNotifierItem
 #### Tray Menu
 
 ```
-Show Clipboard (Super+Alt+V)
+Show Clipboard (Ctrl+Alt+V)
 ─────────────
 Paste Stack: OFF
 Text Expander: ON
@@ -689,7 +699,7 @@ TOML config file at `~/.config/paste/config.toml`:
 
 ```toml
 [hotkeys]
-toggle_overlay = "Super+Alt+V"
+toggle_overlay = "Ctrl+Alt+V"
 paste_stack_mode = "Super+Shift+V"
 quick_copy_to_pinboard = "Super+Shift+C"
 toggle_expander = "Ctrl+Alt+Space"

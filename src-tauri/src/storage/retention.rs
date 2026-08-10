@@ -166,9 +166,7 @@ mod tests {
         assert_eq!(deleted, 1);
 
         // Only the new clip should remain
-        let remaining = storage
-            .get_clips(0, 100, &ClipFilters::default())
-            .unwrap();
+        let remaining = storage.get_clips(0, 100, &ClipFilters::default()).unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].text_content.as_deref(), Some("new clip"));
     }
@@ -187,9 +185,7 @@ mod tests {
         let deleted = storage.enforce_retention(None, Some(5)).unwrap();
         assert_eq!(deleted, 5);
 
-        let remaining = storage
-            .get_clips(0, 100, &ClipFilters::default())
-            .unwrap();
+        let remaining = storage.get_clips(0, 100, &ClipFilters::default()).unwrap();
         assert_eq!(remaining.len(), 5);
 
         // The remaining should be the 5 most recent (clips 5-9)
@@ -234,9 +230,7 @@ mod tests {
         let deleted = storage.enforce_retention(None, Some(1)).unwrap();
         assert_eq!(deleted, 2); // 3 non-exempt, keep 1, delete 2
 
-        let remaining = storage
-            .get_clips(0, 100, &ClipFilters::default())
-            .unwrap();
+        let remaining = storage.get_clips(0, 100, &ClipFilters::default()).unwrap();
         // 2 pinboard + 1 kept = 3 total
         assert_eq!(remaining.len(), 3);
     }
@@ -246,9 +240,7 @@ mod tests {
         let storage = Storage::new_in_memory().unwrap();
 
         // Create clips and favorite one
-        let clip1 = storage
-            .insert_clip(&make_clip("fav clip", "hf"))
-            .unwrap();
+        let clip1 = storage.insert_clip(&make_clip("fav clip", "hf")).unwrap();
         storage.toggle_favorite(&clip1.id).unwrap();
 
         for i in 0..5 {
@@ -261,9 +253,7 @@ mod tests {
         let deleted = storage.enforce_retention(None, Some(2)).unwrap();
         assert_eq!(deleted, 3); // 5 non-exempt, keep 2, delete 3
 
-        let remaining = storage
-            .get_clips(0, 100, &ClipFilters::default())
-            .unwrap();
+        let remaining = storage.get_clips(0, 100, &ClipFilters::default()).unwrap();
         // 1 favorite + 2 kept = 3 total
         assert_eq!(remaining.len(), 3);
 
@@ -317,9 +307,7 @@ mod tests {
         // 5 deleted by age + 2 deleted by count (5 remaining, keep 3)
         assert_eq!(deleted, 7);
 
-        let remaining = storage
-            .get_clips(0, 100, &ClipFilters::default())
-            .unwrap();
+        let remaining = storage.get_clips(0, 100, &ClipFilters::default()).unwrap();
         assert_eq!(remaining.len(), 3);
     }
 }

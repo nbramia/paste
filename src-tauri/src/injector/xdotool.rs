@@ -1,6 +1,6 @@
-use std::process::Command;
-use log::debug;
 use super::{Injector, InjectorError};
+use log::debug;
+use std::process::Command;
 
 /// Injects text via xdotool (X11).
 pub struct XdotoolInjector;
@@ -48,7 +48,10 @@ impl Injector for XdotoolInjector {
         Ok(())
     }
 
-    fn inject_rich(&self, content: &super::clipboard_inject::RichContent) -> Result<(), InjectorError> {
+    fn inject_rich(
+        &self,
+        content: &super::clipboard_inject::RichContent,
+    ) -> Result<(), InjectorError> {
         use super::clipboard_inject::clipboard_inject_rich_x11;
         clipboard_inject_rich_x11(content)
     }

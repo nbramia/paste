@@ -12,6 +12,8 @@ pub struct MatchResult {
     pub snippet_id: String,
     pub abbreviation: String,
     pub content: String,
+    // Carried through from storage; matching does not key off content type yet.
+    #[allow(dead_code)]
     pub content_type: String,
 }
 
@@ -44,7 +46,7 @@ impl AbbreviationMatcher {
         // Check all abbreviations to see if the buffer ends with one.
         // Start with longest abbreviations first to prefer longer matches.
         let mut candidates: Vec<(&String, &MatchResult)> = self.abbreviations.iter().collect();
-        candidates.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        candidates.sort_by_key(|(abbr, _)| std::cmp::Reverse(abbr.len()));
 
         for (abbr, result) in candidates {
             if buffer.ends_with(abbr.as_str()) {
@@ -55,11 +57,14 @@ impl AbbreviationMatcher {
     }
 
     /// Get the number of registered abbreviations.
+    // Used by this module's unit tests.
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.abbreviations.len()
     }
 
     /// Check if there are no registered abbreviations.
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.abbreviations.is_empty()
     }

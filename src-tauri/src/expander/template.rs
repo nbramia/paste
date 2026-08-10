@@ -34,10 +34,7 @@ pub enum FillInField {
         default_value: Option<String>,
     },
     #[serde(rename = "popup")]
-    Popup {
-        name: String,
-        options: Vec<String>,
-    },
+    Popup { name: String, options: Vec<String> },
 }
 
 /// A parsed template token.
@@ -80,6 +77,13 @@ pub enum DateMathUnit {
     Years,
 }
 
+/// Resolves a snippet abbreviation to its template content.
+///
+/// Boxed rather than generic so `ExpansionContext` stays object-safe and can
+/// be cloned into nested evaluations without threading a type parameter
+/// through the whole expander.
+pub type SnippetLookup = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
 /// Context for template evaluation.
 pub struct ExpansionContext {
     /// Current clipboard text content (for %clipboard macro).
@@ -88,7 +92,7 @@ pub struct ExpansionContext {
     pub fill_values: HashMap<String, String>,
     /// Lookup function for nested snippets: abbreviation -> template content.
     /// This avoids coupling the template engine to the storage layer.
-    pub snippet_lookup: Option<Arc<dyn Fn(&str) -> Option<String> + Send + Sync>>,
+    pub snippet_lookup: Option<SnippetLookup>,
     /// Current recursion depth (for nested snippet cycle detection).
     pub depth: usize,
     /// Maximum recursion depth for nested snippets.
@@ -117,6 +121,9 @@ pub struct ExpansionResult {
     pub text: String,
     /// Optional cursor position (byte offset from start of text).
     /// If set, the cursor should be moved to this position after injection.
+    // Cursor positioning (%|) is parsed into the result but injection does not
+    // reposition the cursor yet.
+    #[allow(dead_code)]
     pub cursor_offset: Option<usize>,
 }
 
@@ -221,8 +228,8 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                 }
             }
             // Single-char date format codes
-            'Y' | 'm' | 'H' | 'M' | 'S' | 'A' | 'B' | 'p' | 'a' | 'b' | 'I' | 'j' | 'u'
-            | 'w' | 'e' | 'k' | 'l' | 'Z' | 'z' => {
+            'Y' | 'm' | 'H' | 'M' | 'S' | 'A' | 'B' | 'p' | 'a' | 'b' | 'I' | 'j' | 'u' | 'w'
+            | 'e' | 'k' | 'l' | 'Z' | 'z' => {
                 chars.next();
                 flush_literal(&mut current_literal, &mut tokens);
                 tokens.push(TemplateToken::DateFormat(next.to_string()));
@@ -238,7 +245,7 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                     }
                     let mut inner = String::new();
                     let mut found_close = false;
-                    while let Some(c) = chars.next() {
+                    for c in chars.by_ref() {
                         if c == ')' {
                             found_close = true;
                             break;
@@ -252,8 +259,7 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                             let name = parts[0].to_string();
                             let options: Vec<String> =
                                 parts[1..].iter().map(|s| s.to_string()).collect();
-                            tokens
-                                .push(TemplateToken::FillPopup(FillPopupSpec { name, options }));
+                            tokens.push(TemplateToken::FillPopup(FillPopupSpec { name, options }));
                         }
                     } else {
                         current_literal.push_str(&format!("%fillpopup({inner}"));
@@ -265,7 +271,7 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                     }
                     let mut inner = String::new();
                     let mut found_close = false;
-                    while let Some(c) = chars.next() {
+                    for c in chars.by_ref() {
                         if c == ')' {
                             found_close = true;
                             break;
@@ -288,7 +294,7 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                     }
                     let mut inner = String::new();
                     let mut found_close = false;
-                    while let Some(c) = chars.next() {
+                    for c in chars.by_ref() {
                         if c == ')' {
                             found_close = true;
                             break;
@@ -316,7 +322,7 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                     }
                     let mut inner = String::new();
                     let mut paren_depth = 1u32;
-                    while let Some(c) = chars.next() {
+                    for c in chars.by_ref() {
                         if c == '(' {
                             paren_depth += 1;
                         }
@@ -341,7 +347,7 @@ pub fn parse_template(template: &str) -> Vec<TemplateToken> {
                     }
                     let mut inner = String::new();
                     let mut found_close = false;
-                    while let Some(c) = chars.next() {
+                    for c in chars.by_ref() {
                         if c == ')' {
                             found_close = true;
                             break;
@@ -614,7 +620,7 @@ fn expand_nested_snippet(abbreviation: &str, ctx: &ExpansionContext) -> String {
 
     // Look up the snippet
     let Some(ref lookup) = ctx.snippet_lookup else {
-        return format!("[snippet error: no lookup configured]");
+        return "[snippet error: no lookup configured]".to_string();
     };
 
     let Some(template) = lookup(abbreviation) else {
@@ -645,6 +651,9 @@ pub fn expand_template(template: &str) -> String {
 }
 
 /// Parse and evaluate with a full context.
+// Reachable only from tests today: the app expands via `expand_template`, which
+// builds its own context.
+#[allow(dead_code)]
 pub fn expand_template_with_context(template: &str, ctx: &ExpansionContext) -> ExpansionResult {
     let tokens = parse_template(template);
     evaluate_tokens(&tokens, ctx)
@@ -657,38 +666,46 @@ pub fn extract_fill_in_fields(tokens: &[TemplateToken]) -> Vec<FillInField> {
     let mut seen_names = std::collections::HashSet::new();
 
     for token in tokens {
-        match token {
-            TemplateToken::FillIn(spec) => {
-                if seen_names.insert(spec.name.clone()) {
-                    fields.push(FillInField::Text {
-                        name: spec.name.clone(),
-                        default_value: spec.default_value.clone(),
-                    });
-                }
-            }
-            TemplateToken::FillArea(spec) => {
-                if seen_names.insert(spec.name.clone()) {
-                    fields.push(FillInField::TextArea {
-                        name: spec.name.clone(),
-                        default_value: spec.default_value.clone(),
-                    });
-                }
-            }
-            TemplateToken::FillPopup(spec) => {
-                if seen_names.insert(spec.name.clone()) {
-                    fields.push(FillInField::Popup {
-                        name: spec.name.clone(),
-                        options: spec.options.clone(),
-                    });
-                }
-            }
-            _ => {}
+        // Map the token to its field first, then dedupe once. Repeating the
+        // `seen_names` check inside each arm made the last arm look like a
+        // collapsible match to clippy, and would have pushed a mutating
+        // `insert` into a pattern guard.
+        let (name, field) = match token {
+            TemplateToken::FillIn(spec) => (
+                &spec.name,
+                FillInField::Text {
+                    name: spec.name.clone(),
+                    default_value: spec.default_value.clone(),
+                },
+            ),
+            TemplateToken::FillArea(spec) => (
+                &spec.name,
+                FillInField::TextArea {
+                    name: spec.name.clone(),
+                    default_value: spec.default_value.clone(),
+                },
+            ),
+            TemplateToken::FillPopup(spec) => (
+                &spec.name,
+                FillInField::Popup {
+                    name: spec.name.clone(),
+                    options: spec.options.clone(),
+                },
+            ),
+            _ => continue,
+        };
+
+        // First occurrence of a name wins.
+        if seen_names.insert(name.clone()) {
+            fields.push(field);
         }
     }
     fields
 }
 
 /// Check if a template has any fill-in fields.
+// Fill-in detection is done by the caller inspecting parsed tokens instead.
+#[allow(dead_code)]
 pub fn has_fill_in_fields(template: &str) -> bool {
     let tokens = parse_template(template);
     tokens.iter().any(|t| {
@@ -823,10 +840,7 @@ mod tests {
         let tokens = parse_template("hello %Q world");
         // %Q is unknown -- left as literal "%Q"
         assert_eq!(tokens.len(), 1);
-        assert_eq!(
-            tokens[0],
-            TemplateToken::Literal("hello %Q world".into())
-        );
+        assert_eq!(tokens[0], TemplateToken::Literal("hello %Q world".into()));
     }
 
     #[test]
@@ -1063,8 +1077,7 @@ mod tests {
     fn test_evaluate_fillpopup_with_value() {
         let mut ctx = ExpansionContext::default();
         ctx.fill_values.insert("tone".into(), "Casual".into());
-        let result =
-            expand_template_with_context("Tone: %fillpopup(tone:Pro:Casual:Formal)", &ctx);
+        let result = expand_template_with_context("Tone: %fillpopup(tone:Pro:Casual:Formal)", &ctx);
         assert_eq!(result.text, "Tone: Casual");
     }
 
@@ -1148,10 +1161,7 @@ mod tests {
         let tokens = parse_template("Today is %shell(date +%%F) ok");
         assert_eq!(tokens.len(), 3);
         assert_eq!(tokens[0], TemplateToken::Literal("Today is ".into()));
-        assert_eq!(
-            tokens[1],
-            TemplateToken::ShellCommand("date +%%F".into())
-        );
+        assert_eq!(tokens[1], TemplateToken::ShellCommand("date +%%F".into()));
         assert_eq!(tokens[2], TemplateToken::Literal(" ok".into()));
     }
 

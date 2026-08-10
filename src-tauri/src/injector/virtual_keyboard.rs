@@ -12,7 +12,7 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
-use evdev::uinput::{VirtualDevice, VirtualDeviceBuilder};
+use evdev::uinput::VirtualDevice;
 use evdev::{AttributeSet, EventType, InputEvent, KeyCode};
 use log::{info, warn};
 
@@ -48,7 +48,7 @@ fn build_device() -> io::Result<VirtualDevice> {
     // skip names containing their own "XWayKeyz (virtual)" prefix — without
     // it they grab this device and remap the injected keystrokes. Our own
     // hotkey daemon excludes it by the "paste-injection" token.
-    VirtualDeviceBuilder::new()?
+    VirtualDevice::builder()?
         .name("XWayKeyz (virtual) paste-injection")
         .with_keys(&keys)?
         .build()

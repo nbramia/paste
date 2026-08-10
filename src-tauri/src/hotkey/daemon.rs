@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use evdev::{Device, EventSummary, EventType, KeyCode};
 use log::{debug, info, warn};
 
-use super::keys::{KeyCombo, Modifiers, parse_hotkey};
+use super::keys::{parse_hotkey, KeyCombo, Modifiers};
 
 /// Actions that can be triggered by hotkeys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,7 +16,7 @@ pub enum HotkeyAction {
     PasteStackMode,
     QuickCopyToPinboard,
     ToggleExpander,
-    QuickPaste(u8),  // 1-9: paste Nth most recent clip
+    QuickPaste(u8), // 1-9: paste Nth most recent clip
 }
 
 impl std::fmt::Display for HotkeyAction {
@@ -378,10 +378,7 @@ fn monitor_device(
                             if binding.combo.key == key
                                 && binding.combo.modifiers.matches(&modifiers)
                             {
-                                debug!(
-                                    "Hotkey triggered: {} -> {}",
-                                    binding.combo, binding.action
-                                );
+                                debug!("Hotkey triggered: {} -> {}", binding.combo, binding.action);
                                 if hotkey_tx
                                     .send(HotkeyEvent {
                                         action: binding.action,
@@ -515,10 +512,7 @@ mod tests {
         assert!(daemon.bindings[1].combo.modifiers.super_key);
         assert!(daemon.bindings[1].combo.modifiers.shift);
 
-        assert_eq!(
-            daemon.bindings[2].action,
-            HotkeyAction::QuickCopyToPinboard
-        );
+        assert_eq!(daemon.bindings[2].action, HotkeyAction::QuickCopyToPinboard);
         assert_eq!(daemon.bindings[2].combo.key, KeyCode::KEY_C);
 
         assert_eq!(daemon.bindings[3].action, HotkeyAction::ToggleExpander);
