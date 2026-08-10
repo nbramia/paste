@@ -65,7 +65,7 @@ sudo usermod -aG input $USER
 Download the latest `.deb` from [Releases](https://github.com/nbramia/paste/releases), then:
 
 ```bash
-sudo dpkg -i Paste_0.2.0_amd64.deb
+sudo dpkg -i Paste_0.2.1_amd64.deb
 ```
 
 ### From AppImage
@@ -73,8 +73,8 @@ sudo dpkg -i Paste_0.2.0_amd64.deb
 Download the latest `.AppImage` from [Releases](https://github.com/nbramia/paste/releases), then:
 
 ```bash
-chmod +x Paste_0.2.0_amd64.AppImage
-./Paste_0.2.0_amd64.AppImage
+chmod +x Paste_0.2.1_amd64.AppImage
+./Paste_0.2.1_amd64.AppImage
 ```
 
 ### From Source
