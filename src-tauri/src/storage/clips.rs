@@ -294,6 +294,57 @@ impl Storage {
             None => Ok(None),
         }
     }
+
+    /// Store a clip that supersedes the most recent one — the user extended a
+    /// selection, or re-copied within the debounce window.
+    ///
+    /// The previous clip is deleted and the new one inserted, so the result
+    /// gets a fresh id rather than mutating a row the frontend may be holding.
+    ///
+    /// Refuses to discard a clip the user has deliberately kept: if the most
+    /// recent clip is favorited or filed in a pinboard, this falls back to a
+    /// plain insert and both survive. Returns the stored clip and whether a
+    /// previous one was actually removed.
+    pub fn replace_latest_clip(&self, new_clip: &NewClip) -> Result<(Clip, bool), StorageError> {
+        // Look only at the single most recent clip — never reach past a kept
+        // clip to delete an older one.
+        let victim: Option<String> = {
+            let conn = self.conn.lock().unwrap();
+            let mut stmt = conn.prepare(
+                "SELECT id, is_favorite, pinboard_id FROM clips
+                 ORDER BY created_at DESC LIMIT 1",
+            )?;
+            let mut rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?;
+            match rows.next() {
+                Some(Ok((id, is_favorite, pinboard_id))) => {
+                    if is_favorite || pinboard_id.is_some() {
+                        None
+                    } else {
+                        Some(id)
+                    }
+                }
+                Some(Err(e)) => return Err(StorageError::Database(e)),
+                None => None,
+            }
+        };
+
+        // Insert first: if it fails, we have not destroyed anything.
+        let clip = self.insert_clip(new_clip)?;
+
+        match victim {
+            Some(id) => {
+                self.delete_clip(&id)?;
+                Ok((clip, true))
+            }
+            None => Ok((clip, false)),
+        }
+    }
 }
 
 /// Map a database row to a Clip struct.
@@ -353,6 +404,82 @@ mod tests {
         let fetched = fetched.unwrap();
         assert_eq!(fetched.id, clip.id);
         assert_eq!(fetched.text_content, clip.text_content);
+    }
+
+    #[test]
+    fn test_replace_latest_clip_supersedes_previous() {
+        let storage = Storage::new_in_memory().unwrap();
+        storage.insert_clip(&make_new_clip("Hello", "h1")).unwrap();
+
+        let (clip, replaced) = storage
+            .replace_latest_clip(&make_new_clip("Hello, world", "h2"))
+            .unwrap();
+
+        assert!(replaced);
+        assert_eq!(clip.text_content.as_deref(), Some("Hello, world"));
+
+        // The partial is gone; only the grown clip remains.
+        let all = storage.get_clips(0, 10, &ClipFilters::default()).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].text_content.as_deref(), Some("Hello, world"));
+    }
+
+    #[test]
+    fn test_replace_latest_clip_keeps_a_favorited_previous() {
+        let storage = Storage::new_in_memory().unwrap();
+        let first = storage.insert_clip(&make_new_clip("Hello", "h1")).unwrap();
+        storage.toggle_favorite(&first.id).unwrap();
+
+        let (clip, replaced) = storage
+            .replace_latest_clip(&make_new_clip("Hello, world", "h2"))
+            .unwrap();
+
+        // A clip the user deliberately kept is never discarded.
+        assert!(!replaced);
+        assert_eq!(clip.text_content.as_deref(), Some("Hello, world"));
+        assert!(storage.get_clip_by_id(&first.id).unwrap().is_some());
+        assert_eq!(
+            storage
+                .get_clips(0, 10, &ClipFilters::default())
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn test_replace_latest_clip_keeps_a_pinned_previous() {
+        let storage = Storage::new_in_memory().unwrap();
+        let pb = storage
+            .create_pinboard(&crate::storage::models::NewPinboard {
+                name: "Work".to_string(),
+                color: "#ff0000".to_string(),
+                icon: None,
+            })
+            .unwrap();
+        let first = storage.insert_clip(&make_new_clip("Hello", "h1")).unwrap();
+        storage
+            .update_clip_pinboard(&first.id, Some(&pb.id))
+            .unwrap();
+
+        let (_, replaced) = storage
+            .replace_latest_clip(&make_new_clip("Hello, world", "h2"))
+            .unwrap();
+
+        assert!(!replaced);
+        assert!(storage.get_clip_by_id(&first.id).unwrap().is_some());
+    }
+
+    #[test]
+    fn test_replace_latest_clip_on_empty_history_just_inserts() {
+        let storage = Storage::new_in_memory().unwrap();
+
+        let (clip, replaced) = storage
+            .replace_latest_clip(&make_new_clip("first ever", "h1"))
+            .unwrap();
+
+        assert!(!replaced);
+        assert_eq!(clip.text_content.as_deref(), Some("first ever"));
     }
 
     #[test]
