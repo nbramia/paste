@@ -90,6 +90,7 @@ The `/implement` orchestrator writes review findings to `/tmp/paste-implement-fi
 - Maintain documentation as you go — a change that alters behavior, adds a component boundary, or invalidates something in `architecture.md` / `vision.md` / this file updates those docs in the same PR, not later
 - New snippets should be loaded into the expander matcher on change
 - Destructive git operations are blocked by hooks — use the PR workflow
+- When wrapping up a body of work, cut a **GitHub release**. This is a public open-source repo: be deliberate. Bump the version in `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json` and `package.json` together, write release notes aimed at users (not a commit log), and update `README.md` when behavior or setup changed. Releases are built by `.github/workflows/release.yml` — never publish artifacts by hand.
 - Merging is not shipping — after a merge to main, rebuild and restart the running app so the merged code is actually live:
   ```bash
   npm run build && cd src-tauri && cargo build --release

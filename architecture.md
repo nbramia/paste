@@ -68,14 +68,14 @@ The primary development target is an AMD-based Linux workstation:
 
 | Component | Technology | Rationale |
 |-----------|-----------|-----------|
-| Language (backend) | Rust | Performance, memory safety, excellent Linux ecosystem (evdev, wayland-client, x11rb) |
+| Language (backend) | Rust | Performance, memory safety, excellent Linux ecosystem (evdev, rusqlite, subprocess control) |
 | Language (frontend) | TypeScript | Type safety, rich ecosystem for UI components |
 | App framework | Tauri v2 | Lightweight (~5MB vs Electron's 100MB+), Rust backend, WebView frontend, built-in IPC |
 | Frontend framework | React 19 + TailwindCSS v4 | Largest ecosystem, well-documented Tauri integration, Framer Motion for animations |
 | Animations | Framer Motion | Production-grade animation library, spring physics, layout animations |
 | Storage | SQLite via rusqlite 0.39 + FTS5 | Proven, lightweight, full-text search built-in, single-file database |
 | Clipboard (Wayland) | xclip via XWayland (polling) | Replaced `wl-paste --watch` which caused desktop side-effects; image monitoring disabled |
-| Clipboard (X11) | x11rb crate + XFixes | Event-driven via `XFixesSelectSelectionInput`, no polling needed |
+| Clipboard (X11) | same xclip poller | xclip reads the CLIPBOARD selection identically under X11 and XWayland, so one backend covers both |
 | Global shortcuts | evdev crate | Kernel-level input, works on X11 + Wayland, no root needed (input group) |
 | Text injection | ydotool / xdotool / wtype | Covers all display servers and compositors |
 | System tray | Tauri built-in tray-icon | Uses Tauri v2's native tray icon support with menu builder API |
@@ -87,7 +87,7 @@ The primary development target is an AMD-based Linux workstation:
 ### Why Tauri v2?
 
 - **Lightweight:** ~5-10MB binary vs Electron's 100MB+. WebKitGTK is already installed on most Linux systems.
-- **Rust backend:** Direct access to Linux system APIs (evdev, wayland-client, x11rb) without FFI overhead.
+- **Rust backend:** Direct access to Linux system APIs (evdev, uinput, SQLite) without FFI overhead.
 - **Rich UI:** Web technologies enable the visually rich filmstrip UI that makes Paste special — animations, gradients, rich content previews, responsive layouts.
 - **IPC:** Tauri's command/event system provides type-safe communication between Rust backend and React frontend.
 - **Multi-window:** Supports creating additional windows for fill-in field dialogs, settings, etc.
@@ -122,61 +122,16 @@ xclip -selection clipboard -o        -> reads current clipboard text
 ```
 
 - Polling-based: a background thread periodically reads the clipboard via `xclip -selection clipboard -o` through XWayland
-- Content is hashed and compared against the last known hash; if changed, the new content is captured
+- Each poll's content goes through `ClipDedup`, which drops exact repeats, folds a grown selection into the clip it extends, and debounces rapid re-copies (see Deduplication below)
 - **Image monitoring is disabled** — capturing image clipboard changes caused desktop side-effects (trash icon bouncing on GNOME) and was turned off
 - The original design used `wl-paste --watch` for event-driven monitoring, but this was replaced because `wl-paste` caused desktop side-effects on some compositors
 - Re-copying clips to the clipboard uses a `copy_to_clipboard` Tauri command that invokes `xclip -selection clipboard`
 
-#### X11 Implementation (written, not currently used)
+#### X11
 
-> **Status:** `clipboard/x11.rs` implements everything below, but nothing constructs it — startup unconditionally builds a `WaylandClipboard`. X11 support is **not** missing: that type is a misleadingly-named xclip poller which reads the CLIPBOARD selection identically under X11 and XWayland. What X11 users do not get is the sub-second capture latency the XFixes path would provide. Tracked in #103.
+There is no separate X11 backend. `xclip -selection clipboard -o` reads the CLIPBOARD selection identically whether it talks to a real X server or to XWayland, so the poller above serves both display servers and nothing branches on which one is running.
 
-```rust
-// Pseudo-code for X11 clipboard monitoring
-let conn = x11rb::connect()?;
-conn.xfixes_select_selection_input(root, CLIPBOARD, SELECTION_EVENT_MASK)?;
-
-loop {
-    let event = conn.wait_for_event()?;
-    match event {
-        XFixesSelectionNotify { .. } => {
-            // Request clipboard content via TARGETS, then each desired type
-            let content = read_selection(&conn, CLIPBOARD)?;
-            store(content);
-        }
-    }
-}
-```
-
-- Uses XFixes extension for event-driven notification (no polling)
-- Monitors both CLIPBOARD (Ctrl+C) and PRIMARY (mouse selection) selections
-- Reads all available TARGETS to capture multiple representations (text/plain, text/html, image/png, etc.)
-
-#### Display Server Detection (written, not currently used)
-
-> **Status:** `detect_display_server` exists and is never called, for the reason above — one polling backend serves both display servers, so there is nothing to dispatch on. The `ClipboardBackend` trait below is implemented by both backends but only ever instantiated as `WaylandClipboard`. Tracked in #103.
-
-```rust
-fn detect_display_server() -> DisplayServer {
-    if std::env::var("WAYLAND_DISPLAY").is_ok() {
-        DisplayServer::Wayland
-    } else if std::env::var("DISPLAY").is_ok() {
-        DisplayServer::X11
-    } else {
-        panic!("No display server detected");
-    }
-}
-```
-
-Detected once at startup. All clipboard operations dispatch through a `ClipboardBackend` trait:
-
-```rust
-trait ClipboardBackend: Send + Sync {
-    fn start_monitoring(&self, tx: Sender<ClipItem>) -> Result<()>;
-    fn set_clipboard(&self, content: &ClipContent) -> Result<()>;
-    fn get_clipboard(&self) -> Result<ClipContent>;
-}
-```
+An event-driven implementation using the XFixes extension (`XFixesSelectSelectionInput`) lived in `clipboard/x11.rs` but was never constructed. It was removed in #103 along with the `x11rb` dependency and the unused `detect_display_server` helper. Its one advantage over polling was sub-second capture latency on native X11; `git log` has the code if that becomes worth having.
 
 #### Content Type Detection
 
@@ -811,8 +766,6 @@ log = "0.4"
 env_logger = "0.11"
 thiserror = "2"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-x11rb = { version = "0.13", features = ["xfixes"] }  # X11 clipboard
 ```
 
 ### Frontend (package.json)

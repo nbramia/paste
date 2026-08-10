@@ -1,42 +1,25 @@
-//! Clipboard monitoring for X11 (XFixes) and Wayland (wl-paste).
+//! Clipboard monitoring.
+//!
+//! One backend serves both display servers: `wayland` polls the CLIPBOARD
+//! selection through xclip, which reads identically under X11 and XWayland.
+//! An event-driven XFixes backend for native X11 existed here but was never
+//! constructed and has been removed (#103); `git log` has it if the sub-second
+//! capture latency it offered is ever wanted.
 
 pub mod dedup;
 pub mod detection;
 pub mod stack;
 pub mod types;
 pub mod wayland;
-#[cfg(target_os = "linux")]
-pub mod x11;
 
 use std::sync::mpsc;
 use types::ClipItem;
 
-/// Display server type detected at runtime.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// Display-server detection is unused: the xclip poller in `wayland` reads the
-// selection identically under X11 and XWayland, so nothing branches on this.
-// Retained for a future event-driven backend.
-#[allow(dead_code)]
-pub enum DisplayServer {
-    Wayland,
-    X11,
-}
-
-/// Detect the active display server from environment variables.
-#[allow(dead_code)]
-pub fn detect_display_server() -> DisplayServer {
-    if std::env::var("WAYLAND_DISPLAY").is_ok() {
-        DisplayServer::Wayland
-    } else if std::env::var("DISPLAY").is_ok() {
-        DisplayServer::X11
-    } else {
-        // Default to Wayland on modern Linux
-        log::warn!("No display server detected via env vars, defaulting to Wayland");
-        DisplayServer::Wayland
-    }
-}
-
 /// Trait for clipboard monitoring backends.
+///
+/// Only `WaylandClipboard` implements this today. The trait stays because it
+/// pins down what a backend owes the rest of the app, which is what a second
+/// one would have to satisfy.
 pub trait ClipboardBackend: Send + Sync {
     /// Start monitoring clipboard changes. Sends captured items to `tx`.
     /// This method spawns background threads and returns immediately.
