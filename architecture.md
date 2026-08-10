@@ -200,7 +200,11 @@ The deduplication module (`clipboard/dedup.rs`) implements three strategies:
 2. **Growing text detection** — When `merge_growing` is enabled (default), if new content is a superset of the most recent clip (e.g., the user selected a word, then extended the selection to a paragraph), the older partial clip is replaced instead of creating a new entry.
 3. **Debounce** — Rapid consecutive copies within the debounce window (default 500ms) are collapsed.
 
-> **Status:** only strategy 1 is live, and it is implemented inline in the capture loop rather than by this module — `ClipDedup` is never constructed. Strategies 2 and 3 are complete and unit-tested but unreachable, which makes the `clipboard.merge_growing` and `clipboard.debounce_ms` config keys inert. Tracked in #101.
+All three run inside the poll loop, which holds one `ClipDedup` for its lifetime. `Accept` inserts a new clip; `Replace` calls `Storage::replace_latest_clip`, which inserts the new clip and deletes the superseded one — unless that clip is favorited or filed in a pinboard, in which case both are kept and nothing the user deliberately saved is discarded.
+
+> **Note on `debounce_ms`:** the poller wakes once a second, so two *different* clipboard contents are almost always more than the default 500ms apart and the debounce branch rarely fires. It becomes meaningful only if the poll interval drops below the debounce window, or if capture becomes event-driven (#103).
+
+Two `[clipboard]` keys remain unwired: `monitor_primary` and `monitor_clipboard`. The polling watcher reads only the CLIPBOARD selection; PRIMARY monitoring is unimplemented rather than merely disconnected.
 
 #### Application Exclusion
 

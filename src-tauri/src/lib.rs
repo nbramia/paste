@@ -1097,8 +1097,16 @@ pub fn run() {
 
                 let (tx, rx) = mpsc::channel::<clipboard::types::ClipItem>();
 
-                // Start Wayland clipboard monitor
-                let monitor = clipboard::wayland::WaylandClipboard::new(excluded_apps, 10);
+                // Start Wayland clipboard monitor. These four knobs come from
+                // [clipboard] in config.toml — max_content_size_mb used to be
+                // hardcoded to 10 and the dedup pair was never read at all.
+                let clip_cfg = config::AppConfig::load().unwrap_or_default().clipboard;
+                let monitor = clipboard::wayland::WaylandClipboard::new(
+                    excluded_apps,
+                    clip_cfg.max_content_size_mb,
+                    clip_cfg.merge_growing,
+                    clip_cfg.debounce_ms,
+                );
                 match monitor.start_monitoring(tx) {
                     Ok(()) => log::info!("Clipboard monitoring started"),
                     Err(e) => log::error!("Failed to start clipboard monitor: {e}"),
@@ -1114,6 +1122,7 @@ pub fn run() {
                             match rx.recv() {
                                 Ok(item) => {
                                     if let Some(state) = app_handle2.try_state::<AppState>() {
+                                        let replaces_previous = item.replaces_previous;
                                         let new_clip = NewClip {
                                             content_type: item.content_type,
                                             text_content: item.text_content,
@@ -1125,7 +1134,23 @@ pub fn run() {
                                             content_size: item.content_size,
                                             metadata: item.metadata,
                                         };
-                                        match state.storage.insert_clip(&new_clip) {
+                                        // A superseding capture (grown selection or
+                                        // rapid re-copy) replaces the previous clip
+                                        // instead of stacking on top of it.
+                                        let stored = if replaces_previous {
+                                            state
+                                                .storage
+                                                .replace_latest_clip(&new_clip)
+                                                .map(|(clip, replaced)| {
+                                                    if replaced {
+                                                        log::debug!("Clip superseded previous");
+                                                    }
+                                                    clip
+                                                })
+                                        } else {
+                                            state.storage.insert_clip(&new_clip)
+                                        };
+                                        match stored {
                                             Ok(clip) => {
                                                 log::debug!(
                                                     "Clip captured: {} ({} bytes)",

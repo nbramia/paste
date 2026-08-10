@@ -4,6 +4,7 @@ use std::thread;
 
 use log::{debug, error, info, warn};
 
+use super::dedup::{ClipDedup, DedupResult};
 use super::detection::{compute_hash, detect_text_content_type, ContentType};
 use super::types::ClipItem;
 use super::{ClipboardBackend, ClipboardError};
@@ -12,13 +13,22 @@ use super::{ClipboardBackend, ClipboardError};
 pub struct WaylandClipboard {
     excluded_apps: Vec<String>,
     max_content_size_bytes: u64,
+    merge_growing: bool,
+    debounce_ms: u32,
 }
 
 impl WaylandClipboard {
-    pub fn new(excluded_apps: Vec<String>, max_content_size_mb: u32) -> Self {
+    pub fn new(
+        excluded_apps: Vec<String>,
+        max_content_size_mb: u32,
+        merge_growing: bool,
+        debounce_ms: u32,
+    ) -> Self {
         Self {
             excluded_apps,
             max_content_size_bytes: max_content_size_mb as u64 * 1024 * 1024,
+            merge_growing,
+            debounce_ms,
         }
     }
 
@@ -141,6 +151,8 @@ impl ClipboardBackend for WaylandClipboard {
 
         let excluded = self.excluded_apps.clone();
         let max_size = self.max_content_size_bytes;
+        let merge_growing = self.merge_growing;
+        let debounce_ms = self.debounce_ms;
 
         // Spawn text monitoring thread
         let tx_text = tx.clone();
@@ -150,6 +162,8 @@ impl ClipboardBackend for WaylandClipboard {
                 let monitor = WaylandClipboard {
                     excluded_apps: excluded,
                     max_content_size_bytes: max_size,
+                    merge_growing,
+                    debounce_ms,
                 };
                 monitor_text_loop(&monitor, tx_text);
             })
@@ -242,7 +256,7 @@ fn run_text_watcher(
     monitor: &WaylandClipboard,
     tx: &mpsc::Sender<ClipItem>,
 ) -> Result<(), ClipboardError> {
-    let mut last_hash: Option<String> = None;
+    let mut dedup = ClipDedup::new(monitor.merge_growing, monitor.debounce_ms);
     let mut last_content: Option<String> = None;
     let mut last_html: Option<String> = None;
 
@@ -300,11 +314,21 @@ fn run_text_watcher(
 
         let hash = compute_hash(&content);
 
-        if last_hash.as_ref() == Some(&hash) {
+        // Only text is handled on this path. Borrow rather than clone so a
+        // binary payload sitting on the clipboard is not copied once a second.
+        let Ok(text) = std::str::from_utf8(&content) else {
+            debug!("Skipping non-UTF8 clipboard content");
+            continue;
+        };
+
+        // Dedup decides all three dispositions: exact repeats (which every
+        // poll sees while the clipboard is unchanged), a growing selection
+        // superseding its own partial, and a rapid re-copy.
+        let disposition = dedup.check(text);
+        if disposition == DedupResult::Duplicate {
             continue;
         }
-
-        last_hash = Some(hash.clone());
+        let text = text.to_string();
 
         // Detect source app
         let source_app = WaylandClipboard::detect_source_app();
@@ -314,15 +338,6 @@ fn run_text_watcher(
             debug!("Skipping clipboard from excluded app: {:?}", source_app);
             continue;
         }
-
-        // Convert to string
-        let text = match String::from_utf8(content.clone()) {
-            Ok(s) => s,
-            Err(_) => {
-                debug!("Skipping non-UTF8 clipboard content");
-                continue;
-            }
-        };
 
         // Detect content type
         let content_type = detect_text_content_type(&text);
@@ -350,6 +365,7 @@ fn run_text_watcher(
             content_hash: hash,
             content_size: content.len() as i64,
             metadata,
+            replaces_previous: disposition == DedupResult::Replace,
         };
 
         debug!(
@@ -450,6 +466,7 @@ fn monitor_image_loop(monitor: &WaylandClipboard, tx: mpsc::Sender<ClipItem>) {
             content_hash: hash,
             content_size: content.len() as i64,
             metadata: Some(metadata),
+            replaces_previous: false,
         };
 
         debug!("Captured image clip: size={}", item.content_size);
@@ -502,14 +519,14 @@ mod tests {
 
     #[test]
     fn test_wayland_clipboard_new() {
-        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10);
+        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true, 500);
         assert_eq!(wl.excluded_apps.len(), 2);
         assert_eq!(wl.max_content_size_bytes, 10 * 1024 * 1024);
     }
 
     #[test]
     fn test_is_excluded() {
-        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10);
+        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true, 500);
         assert!(wl.is_excluded(&Some("1Password".into())));
         assert!(wl.is_excluded(&Some("KeePassXC".into())));
         assert!(wl.is_excluded(&Some("org.keepassxc.KeePassXC".into())));
@@ -519,7 +536,7 @@ mod tests {
 
     #[test]
     fn test_is_excluded_case_insensitive() {
-        let wl = WaylandClipboard::new(vec!["Bitwarden".into()], 10);
+        let wl = WaylandClipboard::new(vec!["Bitwarden".into()], 10, true, 500);
         assert!(wl.is_excluded(&Some("bitwarden".into())));
         assert!(wl.is_excluded(&Some("BITWARDEN".into())));
         assert!(wl.is_excluded(&Some("Bitwarden".into())));

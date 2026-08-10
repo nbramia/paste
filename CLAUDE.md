@@ -90,3 +90,9 @@ The `/implement` orchestrator writes review findings to `/tmp/paste-implement-fi
 - Maintain documentation as you go — a change that alters behavior, adds a component boundary, or invalidates something in `architecture.md` / `vision.md` / this file updates those docs in the same PR, not later
 - New snippets should be loaded into the expander matcher on change
 - Destructive git operations are blocked by hooks — use the PR workflow
+- Merging is not shipping — after a merge to main, rebuild and restart the running app so the merged code is actually live:
+  ```bash
+  npm run build && cd src-tauri && cargo build --release
+  systemctl --user restart paste.service
+  ```
+  The systemd unit runs `src-tauri/target/release/paste`, so a merge alone changes nothing on the machine. Verify with `systemctl --user status paste.service` and confirm the binary timestamp is newer than the merge.

@@ -1,14 +1,14 @@
 //! Clipboard deduplication: growing text detection and rapid copy debounce.
 //!
-//! NOT CURRENTLY WIRED UP. The capture loop in `wayland.rs` does its own
-//! hash-equality check against the previous clip, which covers exact
-//! duplicates but not the two behaviors implemented here. As a consequence
-//! the `clipboard.merge_growing` and `clipboard.debounce_ms` config keys are
-//! inert — they are read into `Config` and never consulted.
+//! Drives every capture decision in `wayland.rs`'s poll loop: exact repeats
+//! (which the poller sees once a second while the clipboard is unchanged) are
+//! dropped, a grown selection supersedes its own partial, and a rapid
+//! re-copy collapses into the previous clip.
 //!
-//! This module is complete and unit-tested; it needs a `ClipDedup` threaded
-//! through the capture loop, not a rewrite.
-#![allow(dead_code)]
+//! Note that `debounce_ms` rarely fires in practice: the poller wakes once a
+//! second, so two *different* contents are almost always more than the
+//! default 500ms apart. It matters only if the poll interval drops below the
+//! debounce window, or if capture becomes event-driven.
 
 use std::time::{Duration, Instant};
 
@@ -93,6 +93,9 @@ impl ClipDedup {
     }
 
     /// Reset the dedup state (e.g., after a long pause).
+    // The poll loop holds one ClipDedup for its lifetime and never resets;
+    // kept for a caller that restarts capture without rebuilding the filter.
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.last_text = None;
         self.last_time = None;

@@ -293,6 +293,7 @@ impl X11ClipboardMonitor {
                             content_hash: hash,
                             content_size: text.len() as i64,
                             metadata,
+                            replaces_previous: false,
                         };
 
                         debug!(

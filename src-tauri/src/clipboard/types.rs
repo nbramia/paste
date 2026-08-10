@@ -11,4 +11,9 @@ pub struct ClipItem {
     pub content_hash: String, // SHA-256 hex
     pub content_size: i64,
     pub metadata: Option<String>, // JSON string
+    /// When true this capture supersedes the most recent clip rather than
+    /// adding to history — the user extended a selection, or re-copied inside
+    /// the debounce window. Decided by `ClipDedup`; acted on by the receiver.
+    #[serde(default)]
+    pub replaces_previous: bool,
 }
