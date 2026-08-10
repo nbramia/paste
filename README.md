@@ -65,7 +65,7 @@ sudo usermod -aG input $USER
 Download the latest `.deb` from [Releases](https://github.com/nbramia/paste/releases), then:
 
 ```bash
-sudo dpkg -i paste_0.2.0_amd64.deb
+sudo dpkg -i Paste_0.2.0_amd64.deb
 ```
 
 ### From AppImage
