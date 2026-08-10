@@ -53,6 +53,46 @@ npm test                 # frontend (Vitest + React Testing Library)
 cd src-tauri && cargo test  # Rust (requires GTK system libs)
 ```
 
+### Verification gate
+
+All four pass before a PR goes up, and all four are standing acceptance criteria
+on every issue:
+
+```bash
+cargo test                      # in src-tauri/
+cargo clippy -- -D warnings     # in src-tauri/
+npm run test                    # vitest
+npm run lint                    # tsc --noEmit
+```
+
+`cargo check` on top of those confirms the Rust and TypeScript sides of the IPC
+boundary still line up after a command signature changes.
+
+### Test patterns
+
+- Storage tests run against in-memory SQLite; file-based tests use a tempdir.
+- Mock everything external — evdev devices, the display server, clipboard
+  access, and Tauri `invoke` in frontend tests.
+- Test behaviour, not implementation. A test that needs real hardware belongs
+  behind a mock instead.
+
+### Escalation
+
+Stop and ask a human before implementing any of these:
+
+| Trigger |
+|---------|
+| evdev input handling or global hotkey registration |
+| the xclip poll loop in `clipboard/wayland.rs` or its dedup rules |
+| SQLite schema changes (they need a migration in `storage/migrations.rs`) |
+| injection-backend selection behind the `Injector` trait |
+| system tray integration |
+| a new dependency in `src-tauri/Cargo.toml` or `package.json` |
+| the Tauri IPC command interface |
+| the config schema in `config.rs` |
+| an acceptance criterion that is ambiguous or untestable |
+| a test that would need a real display server, clipboard, or evdev device |
+
 ### Adding a feature
 1. `/draft-issue` — creates a well-scoped GitHub issue with acceptance criteria
 2. `/implement #N` — orchestrates: plan → code → review → address → merge
