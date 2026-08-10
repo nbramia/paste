@@ -39,11 +39,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli
-
+      # @tauri-apps/cli is a devDependency, so `npm ci` above already provides
+      # the `tauri` binary. `cargo tauri` would need the separate cargo-tauri
+      # crate, which was never installed — that is what broke the v0.2.0 build.
       - name: Build
-        run: cargo tauri build
+        run: npx tauri build
 
       - name: List build artifacts
         run: |
