@@ -143,7 +143,7 @@ Full reference: [docs/configuration.md](docs/configuration.md)
 | Backend | Rust (Tauri v2) |
 | Frontend | React 19 + TypeScript + TailwindCSS v4 |
 | Storage | SQLite with FTS5 full-text search |
-| Clipboard | xclip polling via XWayland (Wayland) / XFixes (X11) |
+| Clipboard | xclip polling (works under X11 and XWayland alike) |
 | Input | evdev (global hotkeys + text expander) |
 | Injection | xdotool / ydotool / wtype |
 | Animations | Framer Motion |
