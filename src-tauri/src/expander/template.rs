@@ -666,32 +666,38 @@ pub fn extract_fill_in_fields(tokens: &[TemplateToken]) -> Vec<FillInField> {
     let mut seen_names = std::collections::HashSet::new();
 
     for token in tokens {
-        match token {
-            TemplateToken::FillIn(spec) => {
-                if seen_names.insert(spec.name.clone()) {
-                    fields.push(FillInField::Text {
-                        name: spec.name.clone(),
-                        default_value: spec.default_value.clone(),
-                    });
-                }
-            }
-            TemplateToken::FillArea(spec) => {
-                if seen_names.insert(spec.name.clone()) {
-                    fields.push(FillInField::TextArea {
-                        name: spec.name.clone(),
-                        default_value: spec.default_value.clone(),
-                    });
-                }
-            }
-            TemplateToken::FillPopup(spec) => {
-                if seen_names.insert(spec.name.clone()) {
-                    fields.push(FillInField::Popup {
-                        name: spec.name.clone(),
-                        options: spec.options.clone(),
-                    });
-                }
-            }
-            _ => {}
+        // Map the token to its field first, then dedupe once. Repeating the
+        // `seen_names` check inside each arm made the last arm look like a
+        // collapsible match to clippy, and would have pushed a mutating
+        // `insert` into a pattern guard.
+        let (name, field) = match token {
+            TemplateToken::FillIn(spec) => (
+                &spec.name,
+                FillInField::Text {
+                    name: spec.name.clone(),
+                    default_value: spec.default_value.clone(),
+                },
+            ),
+            TemplateToken::FillArea(spec) => (
+                &spec.name,
+                FillInField::TextArea {
+                    name: spec.name.clone(),
+                    default_value: spec.default_value.clone(),
+                },
+            ),
+            TemplateToken::FillPopup(spec) => (
+                &spec.name,
+                FillInField::Popup {
+                    name: spec.name.clone(),
+                    options: spec.options.clone(),
+                },
+            ),
+            _ => continue,
+        };
+
+        // First occurrence of a name wins.
+        if seen_names.insert(name.clone()) {
+            fields.push(field);
         }
     }
     fields

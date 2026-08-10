@@ -46,7 +46,7 @@ impl AbbreviationMatcher {
         // Check all abbreviations to see if the buffer ends with one.
         // Start with longest abbreviations first to prefer longer matches.
         let mut candidates: Vec<(&String, &MatchResult)> = self.abbreviations.iter().collect();
-        candidates.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        candidates.sort_by_key(|(abbr, _)| std::cmp::Reverse(abbr.len()));
 
         for (abbr, result) in candidates {
             if buffer.ends_with(abbr.as_str()) {

@@ -1031,11 +1031,11 @@ pub fn run() {
                             // Window got focus — clear the "just shown" flag
                             showing_clone.store(false, std::sync::atomic::Ordering::Relaxed);
                         }
-                        tauri::WindowEvent::Focused(false) => {
-                            // Only auto-hide if we're not in the middle of showing
-                            if !showing_clone.load(std::sync::atomic::Ordering::Relaxed) {
-                                let _ = win_clone.hide();
-                            }
+                        // Only auto-hide if we're not in the middle of showing
+                        tauri::WindowEvent::Focused(false)
+                            if !showing_clone.load(std::sync::atomic::Ordering::Relaxed) =>
+                        {
+                            let _ = win_clone.hide();
                         }
                         _ => {}
                     }
