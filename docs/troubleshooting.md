@@ -2,7 +2,7 @@
 
 ## "No keyboard devices found" / Permission denied
 
-**Symptom:** Global hotkeys (Super+Alt+V) and text expander don't work. Error about `/dev/input/event*` access in logs.
+**Symptom:** Global hotkeys (Ctrl+Alt+V) and text expander don't work. Error about `/dev/input/event*` access in logs.
 
 **Fix:** Add your user to the `input` group:
 

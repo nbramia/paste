@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import App from "../App";
 import { mockClips } from "../test/fixtures";
@@ -39,15 +39,35 @@ function callsTo(cmd: string) {
   return mockInvoke.mock.calls.filter(([name]) => name === cmd);
 }
 
+/**
+ * Flush React's pending passive effects.
+ *
+ * These tests drive the app through a window-level keydown listener that App
+ * registers in a `useEffect` keyed on `displayClips`. React commits DOM
+ * mutations before it runs passive effects, so waiting on rendered content
+ * proves the clips are on screen but NOT that the listener has been
+ * re-registered with them — the listener can still be closed over the initial
+ * empty array. That gap made these tests flaky (~1 run in 6). Awaiting an
+ * empty act() drains the effect queue so the handler is current before we
+ * dispatch a key.
+ */
+async function flushEffects() {
+  await act(async () => {});
+}
+
 async function renderApp() {
   const utils = render(<App />);
-  await waitFor(() => expect(screen.getByText(/Hello, world!/)).toBeInTheDocument());
+  await waitFor(() =>
+    expect(screen.getByText(`${mockClips.length} items`)).toBeInTheDocument(),
+  );
+  await flushEffects();
   return utils;
 }
 
 async function openPinboardsTab() {
   fireEvent.click(screen.getByRole("tab", { name: "pinboards" }));
   await waitFor(() => expect(screen.getByText("Work")).toBeInTheDocument());
+  await flushEffects();
 }
 
 describe("App keyboard routing", () => {
@@ -121,6 +141,7 @@ describe("App keyboard routing", () => {
       // Wait for the strip to actually render — the invoke above fires before
       // the clips are in the DOM, and the key handler needs them there.
       await waitFor(() => expect(screen.getByText(/Hello, world!/)).toBeInTheDocument());
+      await flushEffects();
 
       fireEvent.keyDown(window, { key: "ArrowRight" });
       fireEvent.keyDown(window, { key: "Enter" });
