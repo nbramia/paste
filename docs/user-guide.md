@@ -60,7 +60,7 @@ You must **log out and back in** (or reboot) for this to take effect. Verify wit
 groups | grep input
 ```
 
-Without this, global hotkeys (Super+Alt+V) and the text expander will not work. The filmstrip can still be opened from the system tray menu.
+Without this, global hotkeys (Ctrl+Alt+V) and the text expander will not work. The filmstrip can still be opened from the system tray menu.
 
 ### Wayland Text Injection
 
@@ -119,7 +119,7 @@ excluded_apps = ["1password", "keepassxc", "bitwarden", "lastpass"]
 
 ## 3. The Filmstrip
 
-The filmstrip is the main UI. Press **Super+Alt+V** to toggle it (Cmd+Option+V on a Mac keyboard with Toshy).
+The filmstrip is the main UI. Press **Ctrl+Alt+V** to toggle it (Cmd+Option+V on a Mac keyboard with Toshy).
 
 ### Layout
 
@@ -135,7 +135,6 @@ The filmstrip appears as a horizontal strip anchored to the bottom of your scree
 |-----|--------|
 | Left / Right | Move between cards |
 | Enter | Paste the selected clip (rich content preserved) |
-| Shift+Enter | Paste as plain text (strip formatting) |
 | Double-click | Copy the clip's content to clipboard (does not paste at cursor) |
 | Right-click | Context menu: copy, save to pinboard, toggle favorite, delete |
 | Mouse wheel | Scrolls the filmstrip horizontally (vertical wheel maps to horizontal scroll) |
@@ -179,7 +178,7 @@ This is the fastest way to re-paste something you just copied. The clip is injec
 
 ### Basic Search
 
-Press **/** or **Ctrl+F** while the filmstrip is open to focus the search bar. Type to filter clips in real time. Search is powered by SQLite FTS5, which supports full-text matching across all text content.
+Press **/** or **Ctrl+F** while the filmstrip is open to focus the search bar. Type to filter clips in real time. Search matches substrings against both the clip text and the source application name, so `ell` finds `hello`. Matches are ordered newest-first rather than by relevance.
 
 ### Power Search
 
@@ -449,7 +448,7 @@ When triggered, a dialog appears with four fields: recipient (text), body (texta
 
 ### Creating Snippets
 
-1. Open the filmstrip (Super+Alt+V) and switch to the **Snippets** tab
+1. Open the filmstrip (Ctrl+Alt+V) and switch to the **Snippets** tab
 2. Click the **+** button to create a new snippet
 3. Enter:
    - **Abbreviation** — the trigger text (e.g., `;sig`)
@@ -500,13 +499,13 @@ Drop text content from another application into the filmstrip to create a new cl
 
 ## 17. Rich Paste
 
-When you paste a clip using Enter (not Shift+Enter), Paste preserves rich content:
+Clips retain rich content in storage:
 
 - **HTML clips** — formatting is preserved (bold, italic, links, etc.) via the `text/html` clipboard MIME type
 - **Image clips** — pasted as actual images, not as file paths
 - **Text clips** — pasted as plain text
 
-Use **Shift+Enter** to force plain text paste, stripping all formatting.
+Note that confirming a clip with **Enter** or a double-click puts its *plain text* on the clipboard — the rich representations are kept in storage and used by the Quick Look paste and Paste Stack paths, which inject directly.
 
 ---
 
@@ -532,7 +531,7 @@ Access Settings via the **gear icon in the tab bar** or from the system tray men
 
 ### Hotkeys
 
-- **Toggle overlay** — default: Super+Alt+V (Cmd+Option+V on Mac keyboard with Toshy)
+- **Toggle overlay** — default: Ctrl+Alt+V (Cmd+Option+V on Mac keyboard with Toshy)
 - **Paste Stack mode** — default: Super+Shift+V
 - **Quick copy to pinboard** — default: Super+Shift+C
 - **Toggle expander** — default: Ctrl+Alt+Space
@@ -601,7 +600,7 @@ Paste also respects the `prefers-reduced-motion` media query. When reduced motio
 
 Paste runs as a system tray application. The tray icon provides a context menu with:
 
-- **Show Clipboard (Super+Alt+V)** — open the filmstrip
+- **Show Clipboard (Ctrl+Alt+V)** — open the filmstrip
 - **Paste Stack: OFF/ON** — toggle Paste Stack mode
 - **Text Expander: ON/OFF** — toggle the text expander
 - **Settings** — open the Settings panel
@@ -679,7 +678,7 @@ systemctl --user disable paste.service
 The SQLite database stores:
 
 - **clips** — clipboard history with content, metadata, timestamps, and access counts
-- **clips_fts** — FTS5 full-text search index synchronized via triggers
+
 - **pinboards** — named collections with colors and positions
 - **snippets** — text expander abbreviations and templates
 - **snippet_groups** — organizational groups for snippets

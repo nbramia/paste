@@ -14,7 +14,7 @@ Paste brings that experience to Linux: a visual filmstrip overlay, pinboards for
 
 ### Clipboard Manager
 - **Visual filmstrip** — Horizontal strip of rich content cards with type-specific previews (text, code, links, images, files)
-- **Full-text search** — FTS5-powered instant search with Power Search filters (type, app, date, favorites)
+- **Instant search** — Substring matching across clip text and source app, with Power Search filters (type, app, date, favorites)
 - **Pinboards** — Named, color-coded collections for organizing frequently-used clips
 - **Quick Paste** — Super+1-9 to paste recent clips without opening the filmstrip
 - **Quick Look** — Space to preview full content of any clip
@@ -62,15 +62,19 @@ sudo usermod -aG input $USER
 
 ### From .deb
 
+Download the latest `.deb` from [Releases](https://github.com/nbramia/paste/releases), then:
+
 ```bash
-sudo dpkg -i paste_0.1.0_amd64.deb
+sudo dpkg -i paste_0.2.0_amd64.deb
 ```
 
 ### From AppImage
 
+Download the latest `.AppImage` from [Releases](https://github.com/nbramia/paste/releases), then:
+
 ```bash
-chmod +x Paste_0.1.0_amd64.AppImage
-./Paste_0.1.0_amd64.AppImage
+chmod +x Paste_0.2.0_amd64.AppImage
+./Paste_0.2.0_amd64.AppImage
 ```
 
 ### From Source
@@ -91,9 +95,9 @@ npx tauri build
 
 1. **Launch Paste** — run the binary or enable autostart in Settings
 2. **Copy anything** — text, code, URLs are captured automatically
-3. **Super+Alt+V** — open the filmstrip (Cmd+Option+V on Mac keyboard with Toshy)
-4. **Arrow keys + Enter** — navigate and paste
-5. **Double-click** a card to copy its content to clipboard
+3. **Ctrl+Alt+V** — open the filmstrip (Cmd+Option+V on Mac keyboard with Toshy)
+4. **Arrow keys + Enter** — navigate, then Enter puts the clip on your clipboard and closes the overlay; press Ctrl+V where you want it
+5. **Double-click** a card does the same as Enter
 6. **Right-click** a card for context menu: copy, save to pinboard, toggle favorite, delete
 7. **Mouse wheel** scrolls the filmstrip horizontally
 8. **/** — search your history
@@ -103,12 +107,11 @@ npx tauri build
 
 | Key | Action |
 |-----|--------|
-| Super+Alt+V | Toggle filmstrip |
+| Ctrl+Alt+V | Toggle filmstrip |
 | Super+1-9 | Quick paste Nth clip |
 | Left / Right | Navigate cards |
-| Enter | Paste |
-| Shift+Enter | Paste plain text |
-| Double-click | Copy to clipboard |
+| Enter | Copy to clipboard and close (then Ctrl+V where you want it) |
+| Double-click | Same as Enter |
 | Right-click | Context menu (copy, pin, favorite, delete) |
 | Mouse wheel | Scroll filmstrip horizontally |
 | Space | Quick Look preview |
@@ -142,7 +145,7 @@ Full reference: [docs/configuration.md](docs/configuration.md)
 |-----------|-----------|
 | Backend | Rust (Tauri v2) |
 | Frontend | React 19 + TypeScript + TailwindCSS v4 |
-| Storage | SQLite with FTS5 full-text search |
+| Storage | SQLite (substring search over clip text) |
 | Clipboard | xclip polling (works under X11 and XWayland alike) |
 | Input | evdev (global hotkeys + text expander) |
 | Injection | xdotool / ydotool / wtype |

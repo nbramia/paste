@@ -8,7 +8,7 @@ All settings are also editable through the Settings UI (gear icon in the filmstr
 
 ```toml
 [hotkeys]
-toggle_overlay = "Super+Alt+V"       # Open/close the filmstrip (Cmd+Option+V with Toshy)
+toggle_overlay = "Ctrl+Alt+V"       # Open/close the filmstrip (Cmd+Option+V with Toshy)
 paste_stack_mode = "Super+Shift+V"   # Toggle Paste Stack mode
 quick_copy_to_pinboard = "Super+Shift+C"  # Quick save to pinboard
 toggle_expander = "Ctrl+Alt+Space"   # Enable/disable text expander
@@ -107,7 +107,7 @@ For reference, this is the complete default configuration file:
 
 ```toml
 [hotkeys]
-toggle_overlay = "Super+Alt+V"
+toggle_overlay = "Ctrl+Alt+V"
 paste_stack_mode = "Super+Shift+V"
 quick_copy_to_pinboard = "Super+Shift+C"
 toggle_expander = "Ctrl+Alt+Space"
