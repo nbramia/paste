@@ -14,7 +14,7 @@ These are the architectural choices that shaped the project. Each involved trade
 
 5. **xdotool for backspaces, ydotool for typing** — ydotool's key code syntax (`14:1 14:0`) was unreliable across versions, producing garbage characters instead of backspaces. xdotool's `key BackSpace` works reliably under XWayland. The injector uses ydotool for `type` (text insertion) and xdotool for `key` (backspaces). Pragmatic, not elegant.
 
-6. **SQLite with FTS5 over external search** — Clipboard history, snippets, and pinboards all live in one SQLite database. FTS5 provides full-text search with relevance ranking without adding Elasticsearch or similar. Versioned migrations handle schema evolution. Trade-off: single-writer concurrency (Mutex<Connection>), which is fine for a desktop app.
+6. **SQLite with LIKE search over FTS5 or an external engine** — Clipboard history, snippets, and pinboards all live in one SQLite database, and search is a parameterized `LIKE '%query%'` scan. An FTS5 index was built first but never queried; measured at 10k clips the LIKE scan takes ~3ms, comfortably inside the 50ms target, so the index was dropped in migration 2 rather than wired up (#102). Substring matching also suits short clipboard content better than FTS5 tokenization — `ell` finds `hello`. The trade-off accepted: no relevance ranking, and search cost grows linearly with history size. Versioned migrations handle schema evolution. Single-writer concurrency (Mutex<Connection>) is fine for a desktop app.
 
 ---
 
@@ -73,7 +73,7 @@ The primary development target is an AMD-based Linux workstation:
 | App framework | Tauri v2 | Lightweight (~5MB vs Electron's 100MB+), Rust backend, WebView frontend, built-in IPC |
 | Frontend framework | React 19 + TailwindCSS v4 | Largest ecosystem, well-documented Tauri integration, Framer Motion for animations |
 | Animations | Framer Motion | Production-grade animation library, spring physics, layout animations |
-| Storage | SQLite via rusqlite 0.39 + FTS5 | Proven, lightweight, full-text search built-in, single-file database |
+| Storage | SQLite via rusqlite 0.39 | Proven, lightweight, single-file database; search is a parameterized LIKE scan (see decision 6) |
 | Clipboard (Wayland) | xclip via XWayland (polling) | Replaced `wl-paste --watch` which caused desktop side-effects; image monitoring disabled |
 | Clipboard (X11) | x11rb crate + XFixes | Event-driven via `XFixesSelectSelectionInput`, no polling needed |
 | Global shortcuts | evdev crate | Kernel-level input, works on X11 + Wayland, no root needed (input group) |
@@ -249,15 +249,6 @@ CREATE TABLE clips (
     accessed_at TEXT,                  -- Last pasted timestamp
     access_count INTEGER DEFAULT 0
 );
-
--- Full-text search index
-CREATE VIRTUAL TABLE clips_fts USING fts5(
-    text_content,
-    content='clips',
-    content_rowid='rowid'
-);
-
--- FTS5 sync triggers (auto-update index on insert/delete/update)
 
 -- Pinboards
 CREATE TABLE pinboards (
@@ -442,9 +433,22 @@ Confirm is the common path and is deliberately not an auto-paste: it always work
 
 Frontend sends search queries to Rust backend via Tauri command.
 
-> **Status:** the FTS5 design below is **not** what runs. `Storage::search_clips` executes a parameterized `LIKE '%query%'` scan over `clips.text_content` and `clips.source_app`; the `clips_fts` table and its sync triggers are still created and maintained on every write, but no query reads them. Consequences: no relevance ranking, and each search is a full table scan rather than an index lookup. Not an injection risk — the pattern is bound as a parameter — and substring matching arguably suits short clipboard content better than FTS5 tokenization. Whether to restore FTS5 or drop the unused index is tracked in #102.
+`Storage::search_clips` executes a parameterized `LIKE '%query%'` scan over `clips.text_content` and `clips.source_app`, with optional filters appended as bound parameters:
 
-The originally designed FTS5 query:
+```sql
+SELECT c.* FROM clips c
+WHERE (c.text_content LIKE ? OR c.source_app LIKE ?)
+  AND (c.content_type = ?)      -- appended only when filtered
+  AND (c.source_app = ?)
+  AND (c.created_at >= ?)
+  AND (c.created_at <= ?)
+  AND (c.is_favorite = ?)
+ORDER BY created_at DESC LIMIT ? OFFSET ?;
+```
+
+Substring matching means `ell` finds `hello`, which FTS5 tokenization would not. The cost is no relevance ranking and a scan that grows linearly with history — measured at ~3ms over 10k clips, well inside the 50ms target, which is why the FTS5 index was dropped rather than wired up (#102, migration 2). A regression guard lives in `storage/search.rs` as `bench_search_at_ten_thousand_clips`.
+
+For reference, the originally designed FTS5 query, which never ran:
 
 ```sql
 -- Basic search

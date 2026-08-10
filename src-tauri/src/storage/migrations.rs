@@ -115,16 +115,31 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX IF NOT EXISTS idx_snippets_abbreviation ON snippets(abbreviation);
         "#,
     },
+    Migration {
+        version: 2,
+        description: "Drop the unused FTS5 index",
+        // Search runs a parameterized LIKE scan, not an FTS5 MATCH — nothing
+        // ever queried clips_fts, but its three triggers rebuilt the index on
+        // every insert, update and delete. Measured at 10k clips the LIKE
+        // scan takes ~3ms, well inside the 50ms target, so the index was pure
+        // write overhead. See #102.
+        sql: r#"
+            DROP TRIGGER IF EXISTS clips_ai;
+            DROP TRIGGER IF EXISTS clips_ad;
+            DROP TRIGGER IF EXISTS clips_au;
+            DROP TABLE IF EXISTS clips_fts;
+        "#,
+    },
     // Future migrations go here:
     // Migration {
-    //     version: 2,
+    //     version: 3,
     //     description: "Add tags column to clips",
     //     sql: "ALTER TABLE clips ADD COLUMN tags TEXT;",
     // },
 ];
 
 /// The current expected schema version.
-pub const CURRENT_VERSION: u32 = 1;
+pub const CURRENT_VERSION: u32 = 2;
 
 /// Run all pending migrations on the database.
 ///
@@ -277,11 +292,72 @@ mod tests {
         let version = get_schema_version(&conn).unwrap();
         assert_eq!(version, CURRENT_VERSION);
 
-        // Only one version entry should exist
+        // One row per applied migration, and the second run adds none.
         let count: u32 = conn
             .query_row("SELECT COUNT(*) FROM schema_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 1);
+        assert_eq!(count as usize, MIGRATIONS.len());
+    }
+
+    #[test]
+    fn test_fts_index_is_dropped() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn, None).unwrap();
+
+        // Nothing queries clips_fts, so migration 2 removes it along with the
+        // three triggers that rebuilt it on every write (#102).
+        let leftovers: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE name = 'clips_fts'
+                    OR name IN ('clips_ai', 'clips_ad', 'clips_au')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(leftovers, 0);
+    }
+
+    #[test]
+    fn test_upgrade_from_v1_drops_fts() {
+        // Simulate a database created before migration 2 existed.
+        let conn = Connection::open_in_memory().unwrap();
+        let v1 = MIGRATIONS.iter().find(|m| m.version == 1).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER NOT NULL,
+                applied_at TEXT NOT NULL
+            );",
+        )
+        .unwrap();
+        conn.execute_batch(v1.sql).unwrap();
+        conn.execute(
+            "INSERT INTO schema_version (version, applied_at) VALUES (1, '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        // The FTS table exists at this point.
+        let before: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'clips_fts'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(before, 1);
+
+        run_migrations(&conn, None).unwrap();
+
+        assert_eq!(get_schema_version(&conn).unwrap(), CURRENT_VERSION);
+        let after: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'clips_fts'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(after, 0);
     }
 
     #[test]

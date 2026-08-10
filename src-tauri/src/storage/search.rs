@@ -93,29 +93,6 @@ impl Storage {
     }
 }
 
-/// Sanitize a user query for FTS5.
-///
-/// Splits the query into whitespace-delimited tokens and wraps each in
-/// double quotes so that special FTS5 characters (*, -, etc.) are treated
-/// as literals. Tokens are joined with spaces, which FTS5 interprets as
-/// implicit AND.
-// Search currently runs a parameterized LIKE query rather than an FTS5 MATCH,
-// so user input needs no FTS escaping. Retained (and tested) for a return to FTS5.
-#[allow(dead_code)]
-fn sanitize_fts_query(query: &str) -> String {
-    let terms: Vec<String> = query
-        .split_whitespace()
-        .filter(|t| !t.is_empty())
-        .map(|t| {
-            // Escape any internal double quotes
-            let escaped = t.replace('"', "\"\"");
-            format!("\"{escaped}\"")
-        })
-        .collect();
-
-    terms.join(" ")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,11 +232,29 @@ mod tests {
     }
 
     #[test]
-    fn test_sanitize_fts_query() {
-        assert_eq!(sanitize_fts_query("hello"), "\"hello\"");
-        assert_eq!(sanitize_fts_query("hello world"), "\"hello\" \"world\"");
-        assert_eq!(sanitize_fts_query(""), "");
-        assert_eq!(sanitize_fts_query("   "), "");
-        assert_eq!(sanitize_fts_query("a*b"), "\"a*b\"");
+    fn bench_search_at_ten_thousand_clips() {
+        let storage = Storage::new_in_memory().unwrap();
+        for i in 0..10_000 {
+            let clip = make_text_clip(
+                &format!("clip number {i} with some filler text"),
+                &format!("hash{i}"),
+            );
+            storage.insert_clip(&clip).unwrap();
+        }
+
+        let start = std::time::Instant::now();
+        let results = storage
+            .search_clips("number 9999", &ClipFilters::default())
+            .unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(results.len(), 1);
+        println!("SEARCH_BENCH: 10k clips, LIKE scan took {elapsed:?}");
+        // Generous bound: this guards against a catastrophic regression,
+        // not against normal variance on a loaded machine.
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "search took {elapsed:?}"
+        );
     }
 }
