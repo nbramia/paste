@@ -134,6 +134,7 @@ fn paste_clip(
 #[tauri::command]
 fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
+        log::info!("hide: requested by frontend (hide_overlay command)");
         win.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -1035,6 +1036,7 @@ pub fn run() {
                         tauri::WindowEvent::Focused(false)
                             if !showing_clone.load(std::sync::atomic::Ordering::Relaxed) =>
                         {
+                            log::info!("hide: focus lost (auto-hide)");
                             let _ = win_clone.hide();
                         }
                         _ => {}
@@ -1049,8 +1051,18 @@ pub fn run() {
                         showing.store(true, std::sync::atomic::Ordering::Relaxed);
                         let _ = overlay::setup_overlay(&app_handle);
                         if let Some(win) = app_handle.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.set_focus();
+                            // The overlay silently failing to appear is invisible
+                            // in logs otherwise: show() errors were discarded and
+                            // nothing recorded whether the window actually mapped.
+                            let before = win.is_visible();
+                            let shown = win.show();
+                            let focused = win.set_focus();
+                            let after = win.is_visible();
+                            log::info!(
+                                "show: visible_before={before:?} show={shown:?} set_focus={focused:?} visible_after={after:?}"
+                            );
+                        } else {
+                            log::warn!("show: main window not found");
                         }
                         // Clear the flag after a short delay
                         let showing2 = showing.clone();
@@ -1209,8 +1221,10 @@ pub fn run() {
                                         HotkeyAction::ToggleOverlay => {
                                             if let Some(win) = app_handle_hk.get_webview_window("main") {
                                                 if win.is_visible().unwrap_or(false) {
+                                                    log::info!("toggle: window reported visible -> hiding");
                                                     let _ = win.hide();
                                                 } else {
+                                                    log::info!("toggle: window reported hidden -> showing");
                                                     // Use the ShowOverlaySender for proper show with focus handling
                                                     if let Some(sender) = app_handle_hk.try_state::<ShowOverlaySender>() {
                                                         let _ = sender.0.lock().unwrap().send(());
