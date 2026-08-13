@@ -77,17 +77,79 @@ fn get_clips(
     result
 }
 
+/// Present the overlay window with an explicit timestamp.
+///
+/// `set_focus()` maps to `gtk_window_present()`, which carries no timestamp.
+/// Mutter's focus-stealing prevention then has nothing to weigh the request
+/// against. `gtk_window_present_with_time()` supplies one.
+///
+/// GTK objects may only be touched from the main thread, and `show_overlay`
+/// runs on the `overlay-show` thread — calling GTK directly from there aborts
+/// the thread with "GTK may only be used from the main thread", which silently
+/// kills the overlay show path. So hop to the main thread first.
+#[cfg(target_os = "linux")]
+fn present_overlay_with_time(app: &tauri::AppHandle) {
+    let handle = app.clone();
+    let dispatched = app.run_on_main_thread(move || {
+        use gtk::prelude::*;
+
+        let Some(win) = handle.get_webview_window("main") else {
+            return;
+        };
+        match win.gtk_window() {
+            Ok(gtk_win) => {
+                let ts = gtk::current_event_time();
+                gtk_win.present_with_time(ts);
+                log::info!(
+                    "show: present_with_time({ts}) focused_after={:?}",
+                    win.is_focused()
+                );
+            }
+            Err(e) => log::warn!("show: gtk_window() unavailable: {e}"),
+        }
+    });
+    if let Err(e) = dispatched {
+        log::warn!("show: could not dispatch to main thread: {e}");
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn present_overlay_with_time(_app: &tauri::AppHandle) {}
+
 /// Hide the overlay and give the compositor time to refocus the previously
 /// active window, so injected keystrokes land at the user's cursor rather
 /// than the overlay itself. No-op when the overlay is already hidden
 /// (e.g. Quick Paste via Super+N).
 fn hide_overlay_for_paste(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        if win.is_visible().unwrap_or(false) {
-            let _ = win.hide();
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    if !win.is_visible().unwrap_or(false) {
+        return;
     }
+
+    let _ = win.hide();
+
+    // Wait for focus to actually leave us rather than guessing. A fixed 100ms
+    // was enough while the overlay never took focus in the first place, but now
+    // that it does (#114) the compositor has a real focus hand-back to perform,
+    // and injecting Ctrl+V before it completes sends the keystroke nowhere.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    while win.is_focused().unwrap_or(false) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    // Settle time for the newly focused window to be ready for input.
+    std::thread::sleep(std::time::Duration::from_millis(80));
+
+    // is_focused() has proved unreliable here (it reported true for a hidden
+    // window), so ask the compositor who actually holds focus. This is the
+    // window the injected Ctrl+V will reach.
+    log::info!(
+        "paste: overlay hidden, tauri_focused={:?} compositor_focus={:?}",
+        win.is_focused(),
+        clipboard::wayland::WaylandClipboard::detect_source_app()
+    );
 }
 
 #[tauri::command]
@@ -1059,11 +1121,51 @@ pub fn run() {
                             let focused = win.set_focus();
                             let after = win.is_visible();
                             log::info!(
-                                "show: visible_before={before:?} show={shown:?} set_focus={focused:?} visible_after={after:?}"
+                                "show: visible_before={before:?} show={shown:?} set_focus={focused:?} visible_after={after:?} focused_after_set_focus={:?}",
+                                win.is_focused()
                             );
+
+                            // Tauri's set_focus() maps to gtk_window_present(),
+                            // which mutter declines: the overlay is summoned by
+                            // an evdev hotkey the compositor never saw, so there
+                            // is no interaction it can attribute the request to.
+                            // Presenting with an explicit timestamp gives the
+                            // focus-stealing check something to compare against
+                            // (#114).
+                            present_overlay_with_time(&app_handle);
                         } else {
                             log::warn!("show: main window not found");
                         }
+                        // A set_focus() issued in the same breath as show() is
+                        // typically not honoured under GNOME Wayland: the
+                        // surface is not mapped yet, and focus-stealing
+                        // prevention drops the request. The window ends up
+                        // visible but not keyboard-focused, so arrow keys go
+                        // nowhere until the user clicks. Ask again once the
+                        // compositor has had time to map it (#114).
+                        let refocus_handle = app_handle.clone();
+                        std::thread::spawn(move || {
+                            for delay in [60u64, 180] {
+                                std::thread::sleep(std::time::Duration::from_millis(delay));
+                                let Some(win) = refocus_handle.get_webview_window("main") else {
+                                    return;
+                                };
+                                // Nothing to chase if the overlay was dismissed
+                                // again in the meantime.
+                                if !win.is_visible().unwrap_or(false) {
+                                    return;
+                                }
+                                if win.is_focused().unwrap_or(false) {
+                                    return;
+                                }
+                                let r = win.set_focus();
+                                log::info!(
+                                    "show: refocus after {delay}ms -> {r:?} focused={:?}",
+                                    win.is_focused()
+                                );
+                            }
+                        });
+
                         // Clear the flag after a short delay
                         let showing2 = showing.clone();
                         std::thread::spawn(move || {

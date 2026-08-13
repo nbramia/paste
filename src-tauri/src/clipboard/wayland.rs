@@ -33,7 +33,7 @@ impl WaylandClipboard {
     }
 
     /// Try to detect the currently focused application via compositor-specific tools.
-    fn detect_source_app() -> Option<String> {
+    pub(crate) fn detect_source_app() -> Option<String> {
         // Try hyprctl first (Hyprland)
         if let Ok(output) = Command::new("hyprctl")
             .args(["activewindow", "-j"])

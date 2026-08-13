@@ -373,16 +373,21 @@ Multiple views render clip cards, and each keeps its own selection state. To avo
 
 Modal dialogs (`CreatePinboardDialog`, `SnippetEditor`, `FillInDialog`) call `stopPropagation()` on keydown, so window-level handlers never see keys typed into a form field.
 
-#### Confirming vs. Pasting
+#### Confirming a clip
 
-Two distinct actions operate on a selected clip, and they are intentionally different:
+`Enter` and double-click both **paste** the selected clip into whatever had focus before the overlay opened:
 
-| Action | Trigger | Command | Behavior |
-|--------|---------|---------|----------|
-| **Confirm** | `Enter`, double-click | `copy_to_clipboard` | Puts the clip on the clipboard and hides the overlay. The user presses `Ctrl+V` themselves. |
-| **Paste** | Quick Look paste, `Super+N` quick paste, Paste Stack | `paste_clip` / `paste_clip_plain` / `paste_clips_multi` | Hides the overlay, waits 100ms for the compositor to refocus the previous window, then injects `Ctrl+V` (see the Text Injector section). |
+1. `paste_clip` hides the overlay.
+2. It waits 100ms for the compositor to refocus the previous window.
+3. It injects `Ctrl+V` via the persistent uinput virtual keyboard (see the Text Injector section).
 
-Confirm is the common path and is deliberately not an auto-paste: it always works regardless of injection backend, and it leaves the user in control of where the content lands. Both paths hide the overlay first — a visible, focused overlay would otherwise swallow the paste. If the clipboard write fails, the overlay stays up so the failure is visible.
+Hiding first is essential — a visible, focused overlay swallows the synthetic paste.
+
+If injection fails, the frontend falls back to `copy_to_clipboard` and dismisses, so the clip still reaches the clipboard and the user can paste manually. The action is never silently lost.
+
+> **History:** confirm was originally a copy-and-dismiss that deliberately left the user to press `Ctrl+V` (#99), on the grounds that it worked regardless of injection backend. Once injection became reliable (#97, #98) that caution cost a keystroke on every paste, so #114 switched confirm to a real paste.
+
+`Escape` and the backdrop click dismiss without pasting.
 
 #### Search Architecture
 

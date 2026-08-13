@@ -96,7 +96,7 @@ npx tauri build
 1. **Launch Paste** — run the binary or enable autostart in Settings
 2. **Copy anything** — text, code, URLs are captured automatically
 3. **Ctrl+Alt+V** — open the filmstrip (Cmd+Option+V on Mac keyboard with Toshy)
-4. **Arrow keys + Enter** — navigate, then Enter puts the clip on your clipboard and closes the overlay; press Ctrl+V where you want it
+4. **Arrow keys + Enter** — navigate, then Enter closes the overlay and pastes the clip straight into the app you were using
 5. **Double-click** a card does the same as Enter
 6. **Right-click** a card for context menu: copy, save to pinboard, toggle favorite, delete
 7. **Mouse wheel** scrolls the filmstrip horizontally
@@ -110,7 +110,7 @@ npx tauri build
 | Ctrl+Alt+V | Toggle filmstrip |
 | Super+1-9 | Quick paste Nth clip |
 | Left / Right | Navigate cards |
-| Enter | Copy to clipboard and close (then Ctrl+V where you want it) |
+| Enter | Close and paste into the previously focused app |
 | Double-click | Same as Enter |
 | Right-click | Context menu (copy, pin, favorite, delete) |
 | Mouse wheel | Scroll filmstrip horizontally |
