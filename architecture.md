@@ -10,7 +10,7 @@ These are the architectural choices that shaped the project. Each involved trade
 
 3. **Tauri built-in tray over ksni crate** — The architecture originally planned to use the `ksni` crate for StatusNotifierItem. Tauri v2's built-in `tray-icon` feature turned out to be sufficient and eliminated an external dependency. Same underlying protocol (AppIndicator/StatusNotifier), simpler integration.
 
-4. **Convention-driven agent framework over settings-file configuration** — Agent behavior is defined in CLAUDE.md and skill files rather than opaque configuration. Rules are readable, auditable, and versionable. Hooks in `.claude/settings.json` enforce the most critical constraints (destructive operations, release workflow); everything else is convention.
+4. **Convention-driven agent framework over settings-file configuration** — Agent behavior is defined in CLAUDE.md and skill files rather than opaque configuration. Rules are readable, auditable, and versionable. A single hook in `.claude/settings.json` blocks the few operations that destroy work irreversibly; everything else is convention, enforced by review rather than by a gate.
 
 5. **xdotool for backspaces, ydotool for typing** — ydotool's key code syntax (`14:1 14:0`) was unreliable across versions, producing garbage characters instead of backspaces. xdotool's `key BackSpace` works reliably under XWayland. The injector uses ydotool for `type` (text insertion) and xdotool for `key` (backspaces). Pragmatic, not elegant.
 
