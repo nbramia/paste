@@ -16,6 +16,8 @@ These are the architectural choices that shaped the project. Each involved trade
 
 6. **SQLite with LIKE search over FTS5 or an external engine** — Clipboard history, snippets, and pinboards all live in one SQLite database, and search is a parameterized `LIKE '%query%'` scan. An FTS5 index was built first but never queried; measured at 10k clips the LIKE scan takes ~3ms, comfortably inside the 50ms target, so the index was dropped in migration 2 rather than wired up (#102). Substring matching also suits short clipboard content better than FTS5 tokenization — `ell` finds `hello`. The trade-off accepted: no relevance ranking, and search cost grows linearly with history size. Versioned migrations handle schema evolution. Single-writer concurrency (Mutex<Connection>) is fine for a desktop app.
 
+7. **Rollback journal over WAL** — SQLite runs in `journal_mode=DELETE`, not WAL. WAL exists so readers and writers can work concurrently; this app has a single `Mutex<Connection>` and no concurrent access, so it bought nothing while introducing a silent data-loss mode. If the `-wal` and `-shm` sidecars are removed while the app holds them open — which happened in practice — every commit goes to an unlinked inode. SQLite reports success, the UI shows the data, and it is all discarded at exit; two days of clipboard history were nearly lost that way (#113). With a rollback journal there are no long-lived sidecars and every commit lands in `paste.db` itself, so an external reader always sees current data. The cost is an extra fsync per transaction, which is irrelevant at a few clips per minute.
+
 ---
 
 ## Hardware Profile
@@ -281,6 +283,29 @@ Images are stored as files in `~/.local/share/paste/images/`:
 - Thumbnail: `{id}_thumb.webp` (256x256, for filmstrip preview)
 
 Thumbnails are generated on capture using the `image` crate. Only thumbnails are loaded into the filmstrip; originals are loaded on-demand for full preview.
+
+#### Database Health
+
+SQLite writes happily to a file that has been unlinked or replaced underneath
+it, reporting success the whole time. Nothing in the normal code path notices,
+so the condition is completely silent.
+
+`Storage` records the device and inode of the database file when it opens, and
+`health_check()` compares that against whatever is at the path now:
+
+| State | Meaning |
+|-------|---------|
+| `Ok` | The open file is still the file at the path |
+| `Missing` | Nothing at the path; writes are going to an unlinked inode |
+| `Replaced` | A different file occupies the path; our writes are invisible to it |
+| `InMemory` | Test database, nothing to verify |
+
+It runs at startup and on each hourly retention tick, logging at error level
+with recovery instructions. `Missing` and `Replaced` both mean writes are being
+lost, which `is_losing_writes()` reports.
+
+Recovery while the process is still alive: copy its open descriptors out of
+`/proc/<pid>/fd/` — the data exists in the orphaned inode until exit.
 
 #### Retention Policy
 

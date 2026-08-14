@@ -77,6 +77,33 @@ fn get_clips(
     result
 }
 
+/// Log loudly if the database file is no longer receiving our writes.
+///
+/// SQLite reports success when writing to a file that has been unlinked or
+/// replaced underneath it, so this condition is otherwise completely silent —
+/// the UI shows the data, the log shows clips being captured, and it is all
+/// discarded when the process exits (#113).
+fn report_db_health(storage: &Storage) {
+    match storage.health_check() {
+        storage::DbHealth::Ok | storage::DbHealth::InMemory => {}
+        storage::DbHealth::Missing => log::error!(
+            "DATABASE FILE IS GONE. Clips captured since startup exist only in this \
+             process and will be lost when it exits. Recover before restarting: copy \
+             /proc/{}/fd/<db-fd> to a safe location.",
+            std::process::id()
+        ),
+        storage::DbHealth::Replaced => log::error!(
+            "DATABASE FILE WAS REPLACED. Clips captured since startup are going to the \
+             old file and will be lost when this process exits. Recover before \
+             restarting: copy /proc/{}/fd/<db-fd> to a safe location.",
+            std::process::id()
+        ),
+        storage::DbHealth::Unreadable(e) => {
+            log::warn!("could not verify database file health: {e}")
+        }
+    }
+}
+
 /// Ask GNOME Shell to focus the overlay.
 ///
 /// Mutter grants focus to the overlay only on its very first map; every later
@@ -1469,6 +1496,7 @@ pub fn run() {
                     loop {
                         // Get storage from app state
                         if let Some(state) = app_handle.try_state::<AppState>() {
+                            report_db_health(&state.storage);
                             match state.storage.enforce_retention(Some(90), Some(10000)) {
                                 Ok(deleted) => {
                                     if deleted > 0 {
@@ -1485,7 +1513,13 @@ pub fn run() {
                 })
                 .ok();
 
-            log::info!("App setup complete");
+                    // One check at startup so a database that went missing while the app
+            // was stopped is reported immediately, not an hour later.
+            if let Some(state) = app.handle().try_state::<AppState>() {
+                report_db_health(&state.storage);
+            }
+
+    log::info!("App setup complete");
             Ok(())
         })
         .run(tauri::generate_context!())
