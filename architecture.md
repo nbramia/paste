@@ -373,16 +373,51 @@ Multiple views render clip cards, and each keeps its own selection state. To avo
 
 Modal dialogs (`CreatePinboardDialog`, `SnippetEditor`, `FillInDialog`) call `stopPropagation()` on keydown, so window-level handlers never see keys typed into a form field.
 
-#### Confirming vs. Pasting
+#### Taking keyboard focus
 
-Two distinct actions operate on a selected clip, and they are intentionally different:
+The overlay is summoned by an evdev hotkey, which the compositor never sees, so
+mutter has no user interaction to attribute the activation to. Under GNOME
+Wayland it therefore grants focus only on the window's **first** map; every
+later show is a re-map and focus-stealing prevention denies it. Measured on the
+development machine, 1 show in 5 got focus — always the first after startup —
+leaving the user to click before arrow keys worked.
 
-| Action | Trigger | Command | Behavior |
-|--------|---------|---------|----------|
-| **Confirm** | `Enter`, double-click | `copy_to_clipboard` | Puts the clip on the clipboard and hides the overlay. The user presses `Ctrl+V` themselves. |
-| **Paste** | Quick Look paste, `Super+N` quick paste, Paste Stack | `paste_clip` / `paste_clip_plain` / `paste_clips_multi` | Hides the overlay, waits 100ms for the compositor to refocus the previous window, then injects `Ctrl+V` (see the Text Injector section). |
+Neither `set_focus()` nor `gtk_window_present_with_time()` fixes this: without
+an xdg-activation token GTK falls back to a plain present, which is what was
+already being refused.
 
-Confirm is the common path and is deliberately not an auto-paste: it always works regardless of injection backend, and it leaves the user in control of where the content lands. Both paths hide the overlay first — a visible, focused overlay would otherwise swallow the paste. If the clipboard write fails, the overlay stays up so the failure is visible.
+`activate_overlay_via_shell()` instead asks GNOME Shell to do it, over the
+`org.gnome.Shell.Extensions.Windows` interface (provided by extensions such as
+Window Calls). That code runs inside the compositor and is not subject to the
+restriction. The overlay window is matched by **pid** rather than window class,
+since the class differs between dev and packaged builds.
+
+This is opportunistic, in the same spirit as the compositor-specific window
+rules: when the interface is absent it is a no-op and behaviour is unchanged.
+
+#### Confirming a clip
+
+`Enter` and double-click both **paste** the selected clip into whatever had focus before the overlay opened:
+
+1. `paste_clip` records the access, spawns a worker thread, and returns.
+2. The worker hides the overlay and waits for the compositor to report focus has moved off Paste.
+3. It injects `Ctrl+V` via the persistent uinput virtual keyboard (see the Text Injector section).
+
+Step 1 matters as much as the others. A synchronous Tauri command runs on the
+main thread, which is also the GTK event loop, so waiting there for the focus
+hand-back is a deadlock: the focus-out event cannot be processed until the
+command returns, and the overlay keeps focus for exactly as long as it is
+waited on. The symptom was a `Ctrl+V` injected into the hidden overlay and
+silently lost — with the compositor reporting `Paste` as focused at the moment
+of injection. Doing the work off-thread lets focus return in ~65ms.
+
+Hiding first is essential — a visible, focused overlay swallows the synthetic paste.
+
+If injection fails, the frontend falls back to `copy_to_clipboard` and dismisses, so the clip still reaches the clipboard and the user can paste manually. The action is never silently lost.
+
+> **History:** confirm was originally a copy-and-dismiss that deliberately left the user to press `Ctrl+V` (#99), on the grounds that it worked regardless of injection backend. Once injection became reliable (#97, #98) that caution cost a keystroke on every paste, so #114 switched confirm to a real paste.
+
+`Escape` and the backdrop click dismiss without pasting.
 
 #### Search Architecture
 

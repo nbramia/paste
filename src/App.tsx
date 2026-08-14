@@ -157,20 +157,27 @@ function App() {
     }
   }, []);
 
-  // Confirming a clip (Enter / double-click) puts it on the clipboard and gets
-  // the overlay out of the way so the user can Ctrl+V into whatever had focus.
-  // Deliberately not an auto-paste — that is `pasteSelected`, which injects
-  // Ctrl+V itself. The overlay stays up if the copy fails, so the failure is
-  // visible rather than silently swallowed.
-  const copyClipAndDismiss = useCallback(
+  // Confirming a clip (Enter / double-click) pastes it straight into whatever
+  // had focus. `paste_clip` hides the overlay, waits for the compositor to
+  // refocus the previous window, then injects Ctrl+V itself — so there is no
+  // dismiss call here.
+  //
+  // Injection depends on the environment, so if it fails we fall back to
+  // leaving the content on the clipboard and dismissing: the user can still
+  // paste manually rather than losing the action entirely.
+  const confirmClip = useCallback(
     async (id: string) => {
       try {
-        await invoke("copy_to_clipboard", { id });
+        await invoke("paste_clip", { id });
       } catch (err) {
-        console.error("Failed to copy:", err);
-        return;
+        console.error("Failed to paste, falling back to clipboard:", err);
+        try {
+          await invoke("copy_to_clipboard", { id });
+        } catch (copyErr) {
+          console.error("Failed to copy:", copyErr);
+        }
+        dismissOverlay();
       }
-      dismissOverlay();
     },
     [dismissOverlay],
   );
@@ -195,11 +202,11 @@ function App() {
     });
   }, [displayClips]);
 
-  const copySelected = useCallback(async () => {
+  const confirmSelected = useCallback(async () => {
     const clip = displayClips[selectedIndex];
     if (!clip) return;
-    await copyClipAndDismiss(clip.id);
-  }, [displayClips, selectedIndex, copyClipAndDismiss]);
+    await confirmClip(clip.id);
+  }, [displayClips, selectedIndex, confirmClip]);
 
   const deleteSelected = useCallback(async () => {
     if (displayClips.length === 0) return;
@@ -421,7 +428,7 @@ function App() {
             }
           } else {
             // Copy to clipboard (same as double-click)
-            copySelected();
+            confirmSelected();
           }
           break;
         case "Delete":
@@ -448,7 +455,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [displayClips, selectedIndex, multiSelectedIds, activeTab, showPasteStack, copySelected, pasteSelected, pastePlainSelected, deleteSelected, toggleFavoriteSelected, dismissOverlay, showPreview, showEditor, isSearching, handleClearSearch]);
+  }, [displayClips, selectedIndex, multiSelectedIds, activeTab, showPasteStack, confirmSelected, pasteSelected, pastePlainSelected, deleteSelected, toggleFavoriteSelected, dismissOverlay, showPreview, showEditor, isSearching, handleClearSearch]);
 
   // Close preview and editor when selection changes
   useEffect(() => {
@@ -566,7 +573,7 @@ function App() {
           selectedIndex={selectedIndex}
           multiSelectedIds={multiSelectedIds}
           onSelect={handleCardSelect}
-          onPaste={copySelected}
+          onPaste={confirmSelected}
           onCardContextMenu={handleCardContextMenu}
           loading={displayLoading}
           containerRef={containerRef}
@@ -582,7 +589,7 @@ function App() {
           onCreatePinboard={createPinboard}
           onUpdatePinboard={updatePinboard}
           onDeletePinboard={deletePinboard}
-          onConfirmClip={copyClipAndDismiss}
+          onConfirmClip={confirmClip}
         />
       ) : activeTab === "snippets" ? (
         <SnippetView

@@ -505,7 +505,7 @@ Clips retain rich content in storage:
 - **Image clips** — pasted as actual images, not as file paths
 - **Text clips** — pasted as plain text
 
-Note that confirming a clip with **Enter** or a double-click puts its *plain text* on the clipboard — the rich representations are kept in storage and used by the Quick Look paste and Paste Stack paths, which inject directly.
+Confirming a clip with **Enter** or a double-click pastes it directly into the application you were using: Paste hides the overlay, waits briefly for that window to regain focus, then injects Ctrl+V with the rich representation intact. If injection fails on your setup, the clip is placed on the clipboard instead and the overlay closes, so you can paste it manually.
 
 ---
 

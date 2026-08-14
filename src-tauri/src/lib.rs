@@ -77,17 +77,129 @@ fn get_clips(
     result
 }
 
+/// Ask GNOME Shell to focus the overlay.
+///
+/// Mutter grants focus to the overlay only on its very first map; every later
+/// show is a re-map and focus-stealing prevention denies it, because the
+/// summoning hotkey comes from evdev and the compositor cannot attribute it to
+/// us. Measured on this machine: 1 of 5 shows got focus, always the first after
+/// startup. `gtk_window_present_with_time()` does not help — without an
+/// xdg-activation token GTK falls back to a plain present.
+///
+/// The `org.gnome.Shell.Extensions.Windows` interface runs inside GNOME Shell,
+/// so its `Activate` is not subject to that restriction. It is provided by
+/// extensions such as Window Calls; when absent this is a no-op and we keep
+/// the behaviour we had. That matches how the rest of the app treats
+/// compositor-specific helpers: use them when present, never require them.
+fn activate_overlay_via_shell() {
+    use std::process::Command;
+
+    const DEST: &str = "org.gnome.Shell";
+    const PATH: &str = "/org/gnome/Shell/Extensions/Windows";
+
+    let listed = Command::new("gdbus")
+        .args([
+            "call",
+            "--session",
+            "--dest",
+            DEST,
+            "--object-path",
+            PATH,
+            "--method",
+            "org.gnome.Shell.Extensions.Windows.List",
+        ])
+        .output();
+
+    let Ok(listed) = listed else {
+        return;
+    };
+    if !listed.status.success() {
+        return;
+    }
+    let raw = String::from_utf8_lossy(&listed.stdout);
+
+    // gdbus wraps the payload as ('<json>',); the JSON itself may be escaped.
+    let (Some(open), Some(close)) = (raw.find('['), raw.rfind(']')) else {
+        return;
+    };
+    let json = raw[open..=close].replace("\\\"", "\"");
+
+    let Ok(windows) = serde_json::from_str::<Vec<serde_json::Value>>(&json) else {
+        return;
+    };
+
+    // Match on our own pid rather than the window class: the class differs
+    // between dev and packaged builds, the pid never lies.
+    let me = std::process::id() as u64;
+    let Some(id) = windows
+        .iter()
+        .find(|w| w.get("pid").and_then(|p| p.as_u64()) == Some(me))
+        .and_then(|w| w.get("id").and_then(|i| i.as_u64()))
+    else {
+        log::debug!("show: overlay window not listed by GNOME Shell");
+        return;
+    };
+
+    let activated = Command::new("gdbus")
+        .args([
+            "call",
+            "--session",
+            "--dest",
+            DEST,
+            "--object-path",
+            PATH,
+            "--method",
+            "org.gnome.Shell.Extensions.Windows.Activate",
+            &id.to_string(),
+        ])
+        .status();
+    log::info!("show: shell activate window {id} -> {activated:?}");
+}
+
 /// Hide the overlay and give the compositor time to refocus the previously
 /// active window, so injected keystrokes land at the user's cursor rather
 /// than the overlay itself. No-op when the overlay is already hidden
 /// (e.g. Quick Paste via Super+N).
 fn hide_overlay_for_paste(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
-        if win.is_visible().unwrap_or(false) {
-            let _ = win.hide();
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+    if !win.is_visible().unwrap_or(false) {
+        return;
     }
+
+    let _ = win.hide();
+
+    // Wait for the compositor to hand focus back before injecting.
+    //
+    // A fixed delay was enough while the overlay never took focus in the first
+    // place. Now that it does (#114), hiding starts a real focus hand-back that
+    // takes the better part of a second here — measured at ~780ms — and a
+    // Ctrl+V injected before it finishes lands in the hidden overlay and is
+    // lost.
+    //
+    // `is_focused()` cannot be used to detect this: it reported `true` for a
+    // hidden window and `false` for a focused one. The compositor's own idea of
+    // the focused window is the only signal that matched reality in testing.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(2000);
+    let mut focus_returned_to = None;
+    while std::time::Instant::now() < deadline {
+        let focused = clipboard::wayland::WaylandClipboard::detect_source_app();
+        let still_ours = focused
+            .as_deref()
+            .map(|a| a.eq_ignore_ascii_case("paste"))
+            .unwrap_or(false);
+        if !still_ours {
+            focus_returned_to = focused;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(40));
+    }
+
+    // Settle time for the newly focused window to be ready for input.
+    std::thread::sleep(std::time::Duration::from_millis(60));
+
+    log::info!("paste: overlay hidden, focus returned to {focus_returned_to:?}");
 }
 
 #[tauri::command]
@@ -112,21 +224,39 @@ fn paste_clip(
         image_path: clip.image_path.clone(),
     };
 
-    hide_overlay_for_paste(&app);
-
-    state
-        .injector
-        .inject_rich(&rich_content)
-        .map_err(|e| e.to_string())?;
-
     // Increment access count
     state
         .storage
         .increment_access_count(&id)
         .map_err(|e| e.to_string())?;
 
+    // Hide and inject on a worker thread, then return immediately.
+    //
+    // A synchronous Tauri command runs on the main thread, which is also the
+    // GTK event loop. Waiting here for the compositor to hand focus back is a
+    // deadlock: the focus-out event cannot be processed until this returns, so
+    // the overlay keeps focus for exactly as long as we wait for it to lose
+    // focus, and the injected Ctrl+V lands in the hidden overlay (#114).
+    let injector = Arc::clone(&state.injector);
+    let app_bg = app.clone();
+    std::thread::Builder::new()
+        .name("paste-inject".into())
+        .spawn(move || {
+            hide_overlay_for_paste(&app_bg);
+            if let Err(e) = injector.inject_rich(&rich_content) {
+                // The content is already on the clipboard either way — the
+                // injector sets it before simulating the keystroke — so a
+                // failure here costs the automatic paste, not the clip.
+                log::error!("paste injection failed: {e}");
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
     let elapsed = start.elapsed();
-    log::debug!("paste_clip: {}ms", elapsed.as_millis());
+    log::debug!(
+        "paste_clip: {}ms (injection continues off-thread)",
+        elapsed.as_millis()
+    );
 
     Ok(())
 }
@@ -1059,8 +1189,19 @@ pub fn run() {
                             let focused = win.set_focus();
                             let after = win.is_visible();
                             log::info!(
-                                "show: visible_before={before:?} show={shown:?} set_focus={focused:?} visible_after={after:?}"
+                                "show: show={shown:?} set_focus={focused:?} visible={after:?} focused={:?}",
+                                win.is_focused()
                             );
+                            let _ = before;
+
+                            // Tauri's set_focus() maps to gtk_window_present(),
+                            // which mutter declines: the overlay is summoned by
+                            // an evdev hotkey the compositor never saw, so there
+                            // is no interaction it can attribute the request to.
+                            // Presenting with an explicit timestamp gives the
+                            // focus-stealing check something to compare against
+                            // (#114).
+                            activate_overlay_via_shell();
                         } else {
                             log::warn!("show: main window not found");
                         }

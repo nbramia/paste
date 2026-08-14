@@ -1,5 +1,49 @@
 # Troubleshooting
 
+## The hotkey works in most apps but not one specific app
+
+**Symptom:** `Ctrl+Alt+V` opens the filmstrip in most applications, but in one
+particular app it does nothing — or does something else entirely, such as
+pasting the clipboard.
+
+**Cause:** a keyboard remapper sitting between the hardware and the compositor.
+[Toshy](https://github.com/RedBearAK/toshy) and other xwaykeyz-based mappers
+grab the physical keyboards and re-emit translated keys, with **per-application**
+rules. If the app has a rule that rewrites your chord, Paste never sees the
+hotkey at all — its log shows no `Hotkey triggered` line.
+
+**Fix:** either exclude that application in the remapper's config, or choose a
+hotkey the remapper does not rewrite (Settings, or `toggle_overlay` in
+`~/.config/paste/config.toml`).
+
+To confirm this is what is happening, watch the log while pressing the hotkey:
+
+```bash
+tail -f ~/.local/share/paste/paste.log | grep Hotkey
+```
+
+No line means the keystroke never reached Paste, and the problem is upstream.
+
+---
+
+## Filmstrip opens but arrow keys do nothing until I click it
+
+**Symptom:** `Ctrl+Alt+V` shows the filmstrip, but the keyboard does not control
+it until you click inside. Affects GNOME Wayland.
+
+**Cause:** the compositor never sees the hotkey — Paste reads it from evdev — so
+GNOME has no user interaction to attribute the window activation to, and
+focus-stealing prevention refuses focus for every appearance after the first
+since startup.
+
+**Fix:** install a GNOME Shell extension that exposes
+`org.gnome.Shell.Extensions.Windows`, such as
+[Window Calls](https://extensions.gnome.org/extension/4724/window-calls/). Paste
+detects it automatically and uses it to focus the overlay. Nothing else depends
+on it, and no other compositor needs it.
+
+---
+
 ## "No keyboard devices found" / Permission denied
 
 **Symptom:** Global hotkeys (Ctrl+Alt+V) and text expander don't work. Error about `/dev/input/event*` access in logs.

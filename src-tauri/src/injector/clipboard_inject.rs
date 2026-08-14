@@ -138,7 +138,9 @@ pub(crate) fn clipboard_inject_wayland(text: &str, key_tool: &str) -> Result<(),
 
     // 3. Simulate Ctrl+V — prefer the persistent virtual keyboard; fall
     // back to external tools when uinput is unavailable.
-    if !super::virtual_keyboard::ctrl_v() {
+    let vk = super::virtual_keyboard::ctrl_v();
+    debug!("Ctrl+V via virtual keyboard: {vk}");
+    if !vk {
         let status = match key_tool {
             "wtype" => Command::new("wtype")
                 .args(["-M", "ctrl", "-k", "v", "-m", "ctrl"])
@@ -241,7 +243,9 @@ pub(crate) fn clipboard_inject_rich_wayland(
 
     // 4. Simulate Ctrl+V — prefer the persistent virtual keyboard; fall
     // back to external tools when uinput is unavailable.
-    if !super::virtual_keyboard::ctrl_v() {
+    let vk = super::virtual_keyboard::ctrl_v();
+    debug!("Ctrl+V via virtual keyboard: {vk}");
+    if !vk {
         let status = match key_tool {
             "wtype" => Command::new("wtype")
                 .args(["-M", "ctrl", "-k", "v", "-m", "ctrl"])

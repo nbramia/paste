@@ -77,39 +77,45 @@ describe("App keyboard routing", () => {
   });
 
   describe("history tab", () => {
-    it("Enter copies the highlighted clip and dismisses the overlay", async () => {
+    it("Enter pastes the highlighted clip", async () => {
       await renderApp();
 
       fireEvent.keyDown(window, { key: "Enter" });
 
       await waitFor(() =>
-        expect(mockInvoke).toHaveBeenCalledWith("copy_to_clipboard", { id: mockClips[0].id }),
+        expect(mockInvoke).toHaveBeenCalledWith("paste_clip", { id: mockClips[0].id }),
       );
-      // No __TAURI__ global in jsdom, so dismissal falls back to the command.
-      await waitFor(() => expect(callsTo("hide_overlay")).toHaveLength(1));
+      // paste_clip hides the overlay and injects Ctrl+V on the Rust side, so
+      // the frontend neither copies nor dismisses.
+      expect(callsTo("copy_to_clipboard")).toHaveLength(0);
+      expect(callsTo("hide_overlay")).toHaveLength(0);
     });
 
-    it("Enter copies the clip the arrows moved to", async () => {
+    it("Enter pastes the clip the arrows moved to", async () => {
       await renderApp();
 
       fireEvent.keyDown(window, { key: "ArrowRight" });
       fireEvent.keyDown(window, { key: "Enter" });
 
       await waitFor(() =>
-        expect(mockInvoke).toHaveBeenCalledWith("copy_to_clipboard", { id: mockClips[1].id }),
+        expect(mockInvoke).toHaveBeenCalledWith("paste_clip", { id: mockClips[1].id }),
       );
     });
 
-    it("keeps the overlay up when the copy fails", async () => {
+    it("falls back to the clipboard when injection fails", async () => {
       const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
       mockInvoke.mockImplementation(((cmd: string, args: any) =>
-        cmd === "copy_to_clipboard" ? Promise.reject("no clipboard") : routeInvoke(cmd, args)) as any);
+        cmd === "paste_clip" ? Promise.reject("no injector") : routeInvoke(cmd, args)) as any);
 
       await renderApp();
       fireEvent.keyDown(window, { key: "Enter" });
 
-      await waitFor(() => expect(callsTo("copy_to_clipboard")).toHaveLength(1));
-      expect(callsTo("hide_overlay")).toHaveLength(0);
+      // The action must not be lost: the clip still reaches the clipboard and
+      // the overlay gets out of the way so the user can paste manually.
+      await waitFor(() =>
+        expect(mockInvoke).toHaveBeenCalledWith("copy_to_clipboard", { id: mockClips[0].id }),
+      );
+      await waitFor(() => expect(callsTo("hide_overlay")).toHaveLength(1));
       consoleError.mockRestore();
     });
   });
@@ -124,11 +130,12 @@ describe("App keyboard routing", () => {
       fireEvent.keyDown(window, { key: "ArrowRight" });
 
       await waitFor(() => expect(screen.getByText("Work")).toBeInTheDocument());
+      expect(callsTo("paste_clip")).toHaveLength(0);
       expect(callsTo("copy_to_clipboard")).toHaveLength(0);
       expect(callsTo("hide_overlay")).toHaveLength(0);
     });
 
-    it("Enter inside a pinboard copies that pinboard's clip and dismisses", async () => {
+    it("Enter inside a pinboard pastes that pinboard's clip", async () => {
       await renderApp();
       await openPinboardsTab();
 
@@ -146,9 +153,8 @@ describe("App keyboard routing", () => {
       fireEvent.keyDown(window, { key: "ArrowRight" });
       fireEvent.keyDown(window, { key: "Enter" });
 
-      await waitFor(() => expect(callsTo("copy_to_clipboard")).toHaveLength(1));
-      expect(mockInvoke).toHaveBeenCalledWith("copy_to_clipboard", { id: pinnedClips[1].id });
-      await waitFor(() => expect(callsTo("hide_overlay")).toHaveLength(1));
+      await waitFor(() => expect(callsTo("paste_clip")).toHaveLength(1));
+      expect(mockInvoke).toHaveBeenCalledWith("paste_clip", { id: pinnedClips[1].id });
     });
 
     it("Delete does not delete a history clip", async () => {

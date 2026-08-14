@@ -60,6 +60,26 @@ sudo usermod -aG input $USER
 # Log out and back in
 ```
 
+#### GNOME Wayland: keyboard focus on open
+
+On GNOME Wayland, a window summoned by a global hotkey is normally refused
+keyboard focus. The compositor never sees the hotkey — Paste reads it from
+evdev — so it has no user interaction to attribute the request to, and
+focus-stealing prevention denies everything after the window's first appearance.
+The filmstrip still opens, but arrow keys do nothing until you click it.
+
+Paste works around this by asking GNOME Shell to focus the window, which
+requires an extension exposing `org.gnome.Shell.Extensions.Windows` — for
+example [Window Calls](https://extensions.gnome.org/extension/4724/window-calls/):
+
+```bash
+# optional; without it the filmstrip opens but needs a click before arrow keys work
+gnome-extensions enable window-calls@domandoman.xyz
+```
+
+This is entirely optional and nothing else depends on it. Other compositors
+(Hyprland, Sway, KDE, X11) grant focus normally and need no extra setup.
+
 ### From .deb
 
 Download the latest `.deb` from [Releases](https://github.com/nbramia/paste/releases), then:
@@ -96,7 +116,7 @@ npx tauri build
 1. **Launch Paste** — run the binary or enable autostart in Settings
 2. **Copy anything** — text, code, URLs are captured automatically
 3. **Ctrl+Alt+V** — open the filmstrip (Cmd+Option+V on Mac keyboard with Toshy)
-4. **Arrow keys + Enter** — navigate, then Enter puts the clip on your clipboard and closes the overlay; press Ctrl+V where you want it
+4. **Arrow keys + Enter** — navigate, then Enter closes the overlay and pastes the clip straight into the app you were using
 5. **Double-click** a card does the same as Enter
 6. **Right-click** a card for context menu: copy, save to pinboard, toggle favorite, delete
 7. **Mouse wheel** scrolls the filmstrip horizontally
@@ -110,7 +130,7 @@ npx tauri build
 | Ctrl+Alt+V | Toggle filmstrip |
 | Super+1-9 | Quick paste Nth clip |
 | Left / Right | Navigate cards |
-| Enter | Copy to clipboard and close (then Ctrl+V where you want it) |
+| Enter | Close and paste into the previously focused app |
 | Double-click | Same as Enter |
 | Right-click | Context menu (copy, pin, favorite, delete) |
 | Mouse wheel | Scroll filmstrip horizontally |

@@ -76,6 +76,32 @@ boundary still line up after a command signature changes.
 - Test behaviour, not implementation. A test that needs real hardware belongs
   behind a mock instead.
 
+### Testing input, focus and paste without a human
+
+`src-tauri/examples/e2e_probe.rs` creates a uinput keyboard and emits real key
+events, so the hotkey -> overlay -> paste flow can be driven end to end from a
+script. The hotkey daemon sees it exactly as it sees a physical keyboard.
+
+```bash
+cargo build --release --example e2e_probe
+./target/release/examples/e2e_probe ctrl-alt-v right enter
+```
+
+Two things it must respect:
+
+- The device name carries the `XWayKeyz (virtual)` prefix so xwaykeyz-based
+  keymappers (Toshy) leave it alone; without that the chord is remapped before
+  Paste sees it. It avoids the `paste-injection` token, which is how Paste's own
+  daemon excludes its injector device.
+- Wait out `HOTPLUG_SCAN_INTERVAL` (2s) before emitting — the daemon has to
+  adopt the new device first, or the keys go nowhere. `PROBE_WARMUP_MS`
+  controls this.
+
+Pair it with a GTK target window that writes its buffer to a file to verify a
+paste actually landed. Prefer this over asking the user to test by hand: it
+turned an unfalsifiable "focus feels broken" report into a measurement (1/5
+before the fix, 13/13 after).
+
 ### Escalation
 
 Stop and ask a human before implementing any of these:
