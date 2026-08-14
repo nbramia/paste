@@ -47,13 +47,14 @@ The key design: `/implement` is an **orchestrator** that delegates to sub-skills
 
 ### Hooks — Automated Guardrails
 
-The `.claude/settings.json` defines hooks that enforce rules automatically:
+`.claude/settings.json` defines one hook plus a permission allowlist:
 
-- **PreToolUse**: Blocks destructive git operations (`--force`, `reset --hard`, `branch -D`) and manual publishing
-- **UserPromptSubmit**: Reminds about the release workflow when "deploy" or "release" is mentioned
-- **Permissions**: Whitelists safe commands (build, test, lint, git operations) for smoother workflow
+- **PreToolUse**: runs `scripts/guard-destructive.py` before every shell command. It blocks three things: force push, hard reset, and recursive deletes aimed at a root or home path. Everything else runs.
+- **Permissions**: allowlists routine commands (build, test, lint, git) so they do not prompt.
 
-These hooks run before/after every tool call — they're not suggestions, they're enforcement.
+The guard is a script, not a prompt. An earlier version asked a model to judge each command and was non-deterministic — the same push allowed one hour and refused the next, and `git push origin <branch>` blocked despite the allowlist granting it. It also matches at a command position rather than anywhere in the string, so writing *about* a blocked operation is not mistaken for running one.
+
+Deliberately narrow. A bad commit is easy to revert; force-pushed history and hard resets are not. Everything recoverable is left to the PR workflow and review rather than to a gate.
 
 ### Conventions Over Configuration
 

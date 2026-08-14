@@ -11,5 +11,5 @@ mod snippets;
 
 pub mod models;
 
-pub use db::Storage;
+pub use db::{DbHealth, Storage};
 pub use error::StorageError;
