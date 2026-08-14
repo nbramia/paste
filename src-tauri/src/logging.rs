@@ -68,7 +68,13 @@ pub fn init_logging() {
         })
         .init();
 
-    log::info!("Paste v0.1.0 starting -- log file: {}", log_path.display());
+    // From Cargo.toml rather than a literal: this line is the first thing in
+    // any bug report, and it read "v0.1.0" for three releases after that.
+    log::info!(
+        "Paste v{} starting -- log file: {}",
+        env!("CARGO_PKG_VERSION"),
+        log_path.display()
+    );
 }
 
 /// Return the log file path (`~/.local/share/paste/paste.log`).
