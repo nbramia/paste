@@ -60,6 +60,26 @@ sudo usermod -aG input $USER
 # Log out and back in
 ```
 
+#### GNOME Wayland: keyboard focus on open
+
+On GNOME Wayland, a window summoned by a global hotkey is normally refused
+keyboard focus. The compositor never sees the hotkey — Paste reads it from
+evdev — so it has no user interaction to attribute the request to, and
+focus-stealing prevention denies everything after the window's first appearance.
+The filmstrip still opens, but arrow keys do nothing until you click it.
+
+Paste works around this by asking GNOME Shell to focus the window, which
+requires an extension exposing `org.gnome.Shell.Extensions.Windows` — for
+example [Window Calls](https://extensions.gnome.org/extension/4724/window-calls/):
+
+```bash
+# optional; without it the filmstrip opens but needs a click before arrow keys work
+gnome-extensions enable window-calls@domandoman.xyz
+```
+
+This is entirely optional and nothing else depends on it. Other compositors
+(Hyprland, Sway, KDE, X11) grant focus normally and need no extra setup.
+
 ### From .deb
 
 Download the latest `.deb` from [Releases](https://github.com/nbramia/paste/releases), then:
