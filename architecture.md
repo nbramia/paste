@@ -8,6 +8,8 @@ These are the architectural choices that shaped the project. Each involved trade
 
 2. **xclip polling over wl-paste --watch** — The original design used `wl-paste --watch` for event-driven clipboard monitoring. In practice, the compositor didn't support the `wlr-data-control` protocol, and `wl-paste` polling caused desktop side-effects (trash icon bouncing from rapid subprocess spawning). `xclip` via XWayland polls cleanly with no visible side-effects. Trade-off: 1-second polling latency instead of instant event-driven capture.
 
+   `wl-paste` is still kept on hand as a second opinion. Reading the clipboard through XWayland means trusting a bridge that can wedge, and when it does `xclip` keeps exiting 0 with stale bytes — a failure with no error to detect (#121, see Staleness detection below). Comparing the two readers is the only way to tell an idle clipboard apart from a blind one. `wl-paste` is polled at 1Hz only while failed over, which bounds the side-effects that motivated this decision in the first place.
+
 3. **Tauri built-in tray over ksni crate** — The architecture originally planned to use the `ksni` crate for StatusNotifierItem. Tauri v2's built-in `tray-icon` feature turned out to be sufficient and eliminated an external dependency. Same underlying protocol (AppIndicator/StatusNotifier), simpler integration.
 
 4. **Convention-driven agent framework over settings-file configuration** — Agent behavior is defined in CLAUDE.md and skill files rather than opaque configuration. Rules are readable, auditable, and versionable. A single hook in `.claude/settings.json` blocks the few operations that destroy work irreversibly; everything else is convention, enforced by review rather than by a gate.
@@ -76,7 +78,7 @@ The primary development target is an AMD-based Linux workstation:
 | Frontend framework | React 19 + TailwindCSS v4 | Largest ecosystem, well-documented Tauri integration, Framer Motion for animations |
 | Animations | Framer Motion | Production-grade animation library, spring physics, layout animations |
 | Storage | SQLite via rusqlite 0.39 | Proven, lightweight, single-file database; search is a parameterized LIKE scan (see decision 6) |
-| Clipboard (Wayland) | xclip via XWayland (polling) | Replaced `wl-paste --watch` which caused desktop side-effects; image monitoring disabled |
+| Clipboard (Wayland) | xclip via XWayland (polling) | Replaced `wl-paste --watch` which caused desktop side-effects; `wl-paste` retained as a staleness cross-check |
 | Clipboard (X11) | same xclip poller | xclip reads the CLIPBOARD selection identically under X11 and XWayland, so one backend covers both |
 | Global shortcuts | evdev crate | Kernel-level input, works on X11 + Wayland, no root needed (input group) |
 | Text injection | ydotool / xdotool / wtype | Covers all display servers and compositors |
@@ -125,7 +127,7 @@ xclip -selection clipboard -o        -> reads current clipboard text
 
 - Polling-based: a background thread periodically reads the clipboard via `xclip -selection clipboard -o` through XWayland
 - Each poll's content goes through `ClipDedup`, which drops exact repeats, folds a grown selection into the clip it extends, and debounces rapid re-copies (see Deduplication below)
-- **Image monitoring is disabled** — capturing image clipboard changes caused desktop side-effects (trash icon bouncing on GNOME) and was turned off
+- **Images ride the same poll as text** — `xclip -o` serves whatever the selection owner offers regardless of the target requested, so a copied image arrives on the ordinary text read as non-UTF8 bytes. Those bytes are sniffed for image magic numbers and captured from there (#122). There is no second polling loop: the original design ran one against `wl-paste --type image/png` once a second, and that rapid spawning is what made the GNOME trash icon bounce, so capture was disabled outright and every copied screenshot was discarded. Folding it into the existing read costs no extra subprocess
 - The original design used `wl-paste --watch` for event-driven monitoring, but this was replaced because `wl-paste` caused desktop side-effects on some compositors
 - Re-copying clips to the clipboard uses a `copy_to_clipboard` Tauri command that invokes `xclip -selection clipboard`
 
@@ -162,6 +164,40 @@ All three run inside the poll loop, which holds one `ClipDedup` for its lifetime
 > **Note on `debounce_ms`:** the poller wakes once a second, so two *different* clipboard contents are almost always more than the default 500ms apart and the debounce branch rarely fires. It becomes meaningful only if the poll interval drops below the debounce window, or if capture becomes event-driven (#103).
 
 Two `[clipboard]` keys remain unwired: `monitor_primary` and `monitor_clipboard`. The polling watcher reads only the CLIPBOARD selection; PRIMARY monitoring is unimplemented rather than merely disconnected.
+
+#### Staleness detection
+
+Reading the clipboard through XWayland means depending on the bridge that
+mirrors the Wayland selection into X11. That bridge can wedge. When it does,
+`xclip` keeps exiting 0 and keeps returning the same bytes while the real
+clipboard moves on — there is no error, no empty read, and nothing to catch.
+
+Every poll then lands on `DedupResult::Duplicate`, which logs nothing. Capture
+goes completely dead while the tray icon, the overlay, retention and the
+hotkeys all keep working. Two windows were measured on the development machine
+before the fix — four days and a day and a half — each ending at a restart
+rather than at a fix, with not one log line in between (#121).
+
+`StaleGuard` closes that hole by keeping a second reader on hand:
+
+| State | Behaviour |
+|-------|-----------|
+| Clipboard changing | Nothing extra happens; `xclip` at 1Hz as before |
+| Unchanged for 60 polls | Read `wl-paste` once and compare |
+| Readers disagree | Log at error level, fail over to `wl-paste` |
+| Failed over, readers agree again | Log recovery, fail back to `xclip` |
+
+Comparison ignores trailing newlines, since `wl-paste --no-newline` strips one
+and `xclip -o` does not.
+
+Failing over is load-bearing, not a convenience. Borrowing the other reader's
+value for a single poll while leaving the stale reader primary makes the stale
+bytes look new again on the very next poll, and the loop alternates between the
+two values once a second.
+
+The cross-check costs at most one extra subprocess per minute, and none while
+the user is actively copying. 1Hz `wl-paste` polling — the thing that caused
+the desktop side-effects behind decision 2 — happens only while failed over.
 
 #### Application Exclusion
 
@@ -280,7 +316,11 @@ The storage module (`storage/migrations.rs`) implements a versioned migration sy
 
 Images are stored as files in `~/.local/share/paste/images/`:
 - Original: `{id}.{ext}` (png, jpg, etc.)
-- Thumbnail: `{id}_thumb.webp` (256x256, for filmstrip preview)
+- Thumbnail: `{id}_thumb.webp` (longest edge scaled to 256px, aspect ratio preserved; lossless WebP)
+
+Thumbnails are derived from the original's path rather than stored in the database, so every path that deletes an image clip must go through `images::remove_image_and_thumbnail` — deleting only `image_path` leaks the sidecar. Retention and `delete_clip` both do.
+
+The frontend receives a thumbnail as a `data:` URI from the `get_clip_thumbnail` command rather than loading the file directly. That keeps the "no direct file access from the frontend" boundary and avoids widening the app's CSP with the asset protocol for the sake of one card.
 
 Thumbnails are generated on capture using the `image` crate. Only thumbnails are loaded into the filmstrip; originals are loaded on-demand for full preview.
 
@@ -320,6 +360,8 @@ max_total_storage_mb = 500     # Total storage cap including images
 Pinboard items and favorites are exempt from retention policy (they persist indefinitely).
 
 Retention is enforced on startup (after a 5-second delay), then periodically every hour via a background scheduler thread.
+
+Both limits are read from config. `0` means unlimited, and is mapped to `None` before it reaches `enforce_retention` — `Some(0)` would read as "delete everything older than zero days" and take the whole history with it. These two values were hardcoded to `(90, 10000)` at the call site until #120, which made `[storage]` inert: history was capped at 90 days no matter what the config said, and there was no way to keep clips indefinitely. The effective policy is logged at startup.
 
 #### Storage Statistics
 
@@ -672,7 +714,7 @@ The service is configured with `Restart=on-failure` and `RestartSec=5` for relia
 │  │   └─ Text expander keystroke buffer               │
 │  │                                                   │
 │  ├─ Clipboard monitor thread                         │  <- xclip polling via XWayland
-│  │   └─ Content processing + dedup + storage         │     (image monitoring disabled)
+│  │   └─ Content processing + dedup + storage         │     (text and images, one loop)
 │  │                                                   │
 │  ├─ Retention scheduler thread                       │  <- hourly cleanup
 │  │                                                   │
@@ -699,11 +741,11 @@ The service is configured with `Restart=on-failure` and `RestartSec=5` for relia
 
 ### IPC (Tauri Commands)
 
-Frontend communicates with Rust backend via Tauri's command system. There are ~45 commands organized into 6 domains:
+Frontend communicates with Rust backend via Tauri's command system. There are ~46 commands organized into 6 domains:
 
 | Domain | Commands | Purpose |
 |--------|----------|---------|
-| Clipboard | 10 | CRUD, search, paste (rich/plain/multi), copy to clipboard, favorites |
+| Clipboard | 11 | CRUD, search, paste (rich/plain/multi), copy to clipboard, favorites, image thumbnails |
 | Pinboards | 6 | CRUD, assign/remove clips |
 | Paste Stack | 8 | Lifecycle management (toggle, push, pop, reorder, clear) |
 | Snippets | 12 | CRUD, groups, fill-in fields, espanso import, JSON export/import |

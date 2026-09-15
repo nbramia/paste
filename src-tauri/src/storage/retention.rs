@@ -46,10 +46,7 @@ impl Storage {
             };
 
             for path in &image_paths {
-                let p = std::path::Path::new(path);
-                if p.exists() {
-                    let _ = std::fs::remove_file(p);
-                }
+                crate::images::remove_image_and_thumbnail(std::path::Path::new(path));
             }
 
             let deleted = conn.execute(
@@ -97,10 +94,7 @@ impl Storage {
                 };
 
                 for path in &image_paths {
-                    let p = std::path::Path::new(path);
-                    if p.exists() {
-                        let _ = std::fs::remove_file(p);
-                    }
+                    crate::images::remove_image_and_thumbnail(std::path::Path::new(path));
                 }
 
                 // Delete oldest non-exempt clips

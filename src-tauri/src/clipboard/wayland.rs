@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -8,6 +9,7 @@ use super::dedup::{ClipDedup, DedupResult};
 use super::detection::{compute_hash, detect_text_content_type, ContentType};
 use super::types::ClipItem;
 use super::{ClipboardBackend, ClipboardError};
+use crate::images;
 
 /// Wayland clipboard backend using wl-paste.
 pub struct WaylandClipboard {
@@ -15,6 +17,12 @@ pub struct WaylandClipboard {
     max_content_size_bytes: u64,
     merge_growing: bool,
     debounce_ms: u32,
+    /// Size ceiling for image captures — `storage.max_image_size_mb`. Separate
+    /// from the text ceiling because screenshots are routinely larger than any
+    /// text anyone copies.
+    max_image_size_bytes: u64,
+    /// Where originals and thumbnails are written.
+    image_dir: PathBuf,
 }
 
 impl WaylandClipboard {
@@ -23,12 +31,16 @@ impl WaylandClipboard {
         max_content_size_mb: u32,
         merge_growing: bool,
         debounce_ms: u32,
+        max_image_size_mb: u32,
+        image_dir: PathBuf,
     ) -> Self {
         Self {
             excluded_apps,
             max_content_size_bytes: max_content_size_mb as u64 * 1024 * 1024,
             merge_growing,
             debounce_ms,
+            max_image_size_bytes: max_image_size_mb as u64 * 1024 * 1024,
+            image_dir,
         }
     }
 
@@ -153,9 +165,13 @@ impl ClipboardBackend for WaylandClipboard {
         let max_size = self.max_content_size_bytes;
         let merge_growing = self.merge_growing;
         let debounce_ms = self.debounce_ms;
+        let max_image_size_bytes = self.max_image_size_bytes;
+        let image_dir = self.image_dir.clone();
 
-        // Spawn text monitoring thread
-        let tx_text = tx.clone();
+        // One thread handles both text and images. There is no separate image
+        // poller: `xclip -o` serves whatever the selection owner offers, so a
+        // copied image arrives on this same read as non-UTF8 bytes (#122).
+        // The old second loop is what made the GNOME trash icon bounce.
         thread::Builder::new()
             .name("clipboard-text".into())
             .spawn(move || {
@@ -164,15 +180,12 @@ impl ClipboardBackend for WaylandClipboard {
                     max_content_size_bytes: max_size,
                     merge_growing,
                     debounce_ms,
+                    max_image_size_bytes,
+                    image_dir,
                 };
-                monitor_text_loop(&monitor, tx_text);
+                monitor_text_loop(&monitor, tx);
             })
             .map_err(ClipboardError::Io)?;
-
-        // Image monitoring disabled — wl-paste --type image/png polling
-        // causes desktop side-effects on some compositors.
-        // TODO: re-enable with event-driven approach
-        drop(tx); // drop the sender clone for images
 
         Ok(())
     }
@@ -311,7 +324,10 @@ pub enum CrossCheck {
 pub struct StaleGuard {
     reader: Reader,
     preferred: Reader,
-    last_seen: Option<Vec<u8>>,
+    /// Hash of the last content seen, not the content itself: an image can sit
+    /// on the clipboard for hours and gets re-read every second, so keeping a
+    /// copy would mean a multi-megabyte allocation per poll.
+    last_seen: Option<String>,
     unchanged_polls: u32,
     interval: u32,
 }
@@ -336,8 +352,9 @@ impl StaleGuard {
     /// Returns true when the clipboard has looked unchanged for long enough
     /// that it is worth asking the other reader for a second opinion.
     pub fn tick(&mut self, content: &[u8]) -> bool {
-        let changed = self.last_seen.as_deref().map(normalized) != Some(normalized(content));
-        self.last_seen = Some(content.to_vec());
+        let seen = fingerprint(content);
+        let changed = self.last_seen.as_deref() != Some(seen.as_str());
+        self.last_seen = Some(seen);
 
         if changed {
             self.unchanged_polls = 0;
@@ -365,7 +382,7 @@ impl StaleGuard {
             // Preferred reader disagrees with the other one: it has gone stale.
             (false, true) => {
                 self.reader = self.reader.other();
-                self.last_seen = Some(other.to_vec());
+                self.last_seen = Some(fingerprint(other));
                 self.unchanged_polls = 0;
                 CrossCheck::FailedOver
             }
@@ -379,6 +396,11 @@ impl StaleGuard {
             _ => CrossCheck::Agree,
         }
     }
+}
+
+/// Identify clipboard content by hash, ignoring trailing newlines.
+fn fingerprint(content: &[u8]) -> String {
+    compute_hash(normalized(content))
 }
 
 /// Strip trailing newlines so the two readers' conventions can be compared.
@@ -432,6 +454,9 @@ fn run_text_watcher(
     let mut dedup = ClipDedup::new(monitor.merge_growing, monitor.debounce_ms);
     let mut last_content: Option<String> = None;
     let mut last_html: Option<String> = None;
+    // Images are deduped on their own hash rather than through ClipDedup,
+    // which only reasons about text.
+    let mut last_image_hash: Option<String> = None;
 
     // xclip via XWayland is preferred — wl-paste subprocess visibility causes
     // desktop side-effects (e.g. trash icon bouncing) when polled at 1Hz.
@@ -502,18 +527,26 @@ fn run_text_watcher(
             }
         }
 
+        // Non-UTF8 bytes mean a binary payload — in practice a copied image.
+        // `xclip -o` serves whatever the selection owner offers regardless of
+        // the target requested, so a screenshot arrives here rather than as an
+        // empty read. Borrow rather than clone so a binary payload sitting on
+        // the clipboard is not copied once a second.
+        let Ok(text) = std::str::from_utf8(&content) else {
+            if let Some(item) = capture_image(monitor, &content, &mut last_image_hash) {
+                if tx.send(item).is_err() {
+                    info!("Clipboard channel closed, stopping clipboard monitor");
+                    return Ok(());
+                }
+            }
+            continue;
+        };
+
         if content.len() as u64 > monitor.max_content_size_bytes {
             continue;
         }
 
         let hash = compute_hash(&content);
-
-        // Only text is handled on this path. Borrow rather than clone so a
-        // binary payload sitting on the clipboard is not copied once a second.
-        let Ok(text) = std::str::from_utf8(&content) else {
-            debug!("Skipping non-UTF8 clipboard content");
-            continue;
-        };
 
         // Dedup decides all three dispositions: exact repeats (which every
         // poll sees while the clipboard is unchanged), a growing selection
@@ -542,6 +575,9 @@ fn run_text_watcher(
         // Update last known content for clipboard persistence
         last_content = Some(text.clone());
         last_html = html_content.clone();
+        // The clipboard has moved on to text, so the same image copied again
+        // later is a genuinely new capture rather than a repeat read.
+        last_image_hash = None;
 
         // Build metadata for links
         let metadata = if content_type == ContentType::Link {
@@ -574,104 +610,114 @@ fn run_text_watcher(
     }
 }
 
-/// Main loop for monitoring image clipboard changes.
-// Dormant alongside the `Image` content type above.
-#[allow(dead_code)]
-fn monitor_image_loop(monitor: &WaylandClipboard, tx: mpsc::Sender<ClipItem>) {
-    let mut last_hash: Option<String> = None;
+/// Capture an image sitting on the clipboard.
+///
+/// Called with the bytes the poll loop already read, so recognising an image
+/// costs no extra subprocess — which is the point. The previous design ran a
+/// second loop polling `wl-paste --type image/png` once a second, and that
+/// rapid spawning is what made the GNOME trash icon bounce (decision 2 in
+/// architecture.md). Capture was disabled outright rather than restructured,
+/// so every copied screenshot was silently discarded (#122).
+///
+/// Returns `None` when the bytes are not an image, when the image is too
+/// large, when it came from an excluded app, or when it is the same image the
+/// previous poll already stored.
+fn capture_image(
+    monitor: &WaylandClipboard,
+    content: &[u8],
+    last_image_hash: &mut Option<String>,
+) -> Option<ClipItem> {
+    // Sniff the content: not every non-UTF8 selection is an image.
+    let kind = images::detect_image_format(content)?;
 
-    loop {
-        // Read current clipboard as image
-        let output = match Command::new("wl-paste")
-            .args(["--no-newline", "--type", "image/png"])
-            .output()
-        {
-            Ok(o) => o,
-            Err(e) => {
-                error!("Failed to run wl-paste for image: {e}");
-                thread::sleep(std::time::Duration::from_secs(2));
-                continue;
-            }
-        };
-
-        if !output.status.success() || output.stdout.is_empty() {
-            thread::sleep(std::time::Duration::from_secs(1));
-            last_hash = None;
-            continue;
-        }
-
-        let content = &output.stdout;
-
-        // Skip images larger than max size
-        if content.len() as u64 > monitor.max_content_size_bytes {
-            debug!("Skipping image: too large ({} bytes)", content.len());
-            thread::sleep(std::time::Duration::from_secs(1));
-            continue;
-        }
-
+    if content.len() as u64 > monitor.max_image_size_bytes {
+        // Remember the hash anyway so an oversized image is reported once
+        // rather than once a second for as long as it sits on the clipboard.
         let hash = compute_hash(content);
-
-        if last_hash.as_ref() == Some(&hash) {
-            thread::sleep(std::time::Duration::from_secs(1));
-            continue;
+        if last_image_hash.as_deref() != Some(hash.as_str()) {
+            debug!(
+                "Skipping image: {} bytes exceeds storage.max_image_size_mb ({} bytes)",
+                content.len(),
+                monitor.max_image_size_bytes
+            );
+            *last_image_hash = Some(hash);
         }
-
-        last_hash = Some(hash.clone());
-
-        // Detect source app
-        let source_app = WaylandClipboard::detect_source_app();
-
-        if monitor.is_excluded(&source_app) {
-            debug!("Skipping image from excluded app: {:?}", source_app);
-            continue;
-        }
-
-        // Save image to data directory
-        let image_dir = dirs::data_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-            .join("paste")
-            .join("images");
-
-        if let Err(e) = std::fs::create_dir_all(&image_dir) {
-            error!("Failed to create image directory: {e}");
-            continue;
-        }
-
-        let image_id = uuid::Uuid::now_v7().to_string();
-        let image_path = image_dir.join(format!("{image_id}.png"));
-
-        if let Err(e) = std::fs::write(&image_path, content) {
-            error!("Failed to write image file: {e}");
-            continue;
-        }
-
-        let metadata = serde_json::json!({
-            "format": "png",
-            "size_bytes": content.len(),
-        })
-        .to_string();
-
-        let item = ClipItem {
-            content_type: "image".to_string(),
-            text_content: None,
-            html_content: None,
-            image_path: Some(image_path.to_string_lossy().to_string()),
-            source_app,
-            content_hash: hash,
-            content_size: content.len() as i64,
-            metadata: Some(metadata),
-            replaces_previous: false,
-        };
-
-        debug!("Captured image clip: size={}", item.content_size);
-
-        if tx.send(item).is_err() {
-            info!("Clipboard channel closed, stopping image monitor");
-            return;
-        }
-
-        thread::sleep(std::time::Duration::from_secs(1));
+        return None;
     }
+
+    let hash = compute_hash(content);
+    if last_image_hash.as_deref() == Some(hash.as_str()) {
+        // Same image still on the clipboard; the poll loop sees it every second.
+        return None;
+    }
+
+    let source_app = WaylandClipboard::detect_source_app();
+    if monitor.is_excluded(&source_app) {
+        debug!("Skipping image from excluded app: {source_app:?}");
+        *last_image_hash = Some(hash);
+        return None;
+    }
+
+    if let Err(e) = std::fs::create_dir_all(&monitor.image_dir) {
+        error!(
+            "Failed to create image directory {}: {e}",
+            monitor.image_dir.display()
+        );
+        return None;
+    }
+
+    let image_id = uuid::Uuid::now_v7().to_string();
+    let image_path = monitor
+        .image_dir
+        .join(format!("{image_id}.{}", kind.extension));
+
+    if let Err(e) = std::fs::write(&image_path, content) {
+        error!("Failed to write image file {}: {e}", image_path.display());
+        return None;
+    }
+
+    // A thumbnail that fails to generate is not fatal — the original is
+    // already stored and pasteable; the card just falls back to its icon.
+    let thumb_path = images::thumbnail_path_for(&image_path);
+    let dimensions = match images::write_thumbnail(content, &thumb_path) {
+        Ok(dims) => Some(dims),
+        Err(e) => {
+            warn!("Failed to write thumbnail for {image_id}: {e}");
+            None
+        }
+    };
+
+    // Only claim the hash once the capture has actually succeeded, so a
+    // transient write failure is retried on the next poll.
+    *last_image_hash = Some(hash.clone());
+
+    let mut metadata = serde_json::json!({
+        "format": kind.extension,
+        "mime": kind.mime,
+        "size_bytes": content.len(),
+    });
+    if let Some((width, height)) = dimensions {
+        metadata["width"] = serde_json::json!(width);
+        metadata["height"] = serde_json::json!(height);
+    }
+
+    debug!(
+        "Captured image clip: {} ({} bytes)",
+        kind.extension,
+        content.len()
+    );
+
+    Some(ClipItem {
+        content_type: ContentType::Image.as_str().to_string(),
+        text_content: None,
+        html_content: None,
+        image_path: Some(image_path.to_string_lossy().to_string()),
+        source_app,
+        content_hash: hash,
+        content_size: content.len() as i64,
+        metadata: Some(metadata.to_string()),
+        replaces_previous: false,
+    })
 }
 
 /// Recursively find the focused window class in a Sway tree JSON.
@@ -713,14 +759,14 @@ mod tests {
 
     #[test]
     fn test_wayland_clipboard_new() {
-        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true, 500);
+        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true, 500, 10, PathBuf::from("/tmp/paste-test-images"));
         assert_eq!(wl.excluded_apps.len(), 2);
         assert_eq!(wl.max_content_size_bytes, 10 * 1024 * 1024);
     }
 
     #[test]
     fn test_is_excluded() {
-        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true, 500);
+        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true, 500, 10, PathBuf::from("/tmp/paste-test-images"));
         assert!(wl.is_excluded(&Some("1Password".into())));
         assert!(wl.is_excluded(&Some("KeePassXC".into())));
         assert!(wl.is_excluded(&Some("org.keepassxc.KeePassXC".into())));
@@ -730,7 +776,7 @@ mod tests {
 
     #[test]
     fn test_is_excluded_case_insensitive() {
-        let wl = WaylandClipboard::new(vec!["Bitwarden".into()], 10, true, 500);
+        let wl = WaylandClipboard::new(vec!["Bitwarden".into()], 10, true, 500, 10, PathBuf::from("/tmp/paste-test-images"));
         assert!(wl.is_excluded(&Some("bitwarden".into())));
         assert!(wl.is_excluded(&Some("BITWARDEN".into())));
         assert!(wl.is_excluded(&Some("Bitwarden".into())));
@@ -920,6 +966,148 @@ mod tests {
         assert_eq!(guard.reader(), Reader::Xclip);
         assert_eq!(guard.cross_check(b"same", b"same"), CrossCheck::Recovered);
         assert_eq!(guard.reader(), Reader::WlPaste);
+    }
+
+    /// A real 8x8 PNG — `capture_image` sniffs magic bytes and the thumbnail
+    /// step actually decodes, so a fake byte string will not do.
+    fn tiny_png() -> Vec<u8> {
+        let mut buf = Vec::new();
+        let img = image::RgbImage::from_fn(8, 8, |x, y| {
+            image::Rgb([(x * 30) as u8, (y * 30) as u8, 120])
+        });
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+            .unwrap();
+        buf
+    }
+
+    fn image_monitor(dir: &std::path::Path, max_image_size_mb: u32) -> WaylandClipboard {
+        WaylandClipboard::new(
+            vec!["1password".into()],
+            10,
+            true,
+            500,
+            max_image_size_mb,
+            dir.to_path_buf(),
+        )
+    }
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "paste-capture-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_capture_image_stores_original_and_thumbnail() {
+        let dir = temp_dir("stores");
+        let monitor = image_monitor(&dir, 10);
+        let mut last_hash = None;
+
+        let item = capture_image(&monitor, &tiny_png(), &mut last_hash)
+            .expect("a valid PNG should be captured");
+
+        assert_eq!(item.content_type, "image");
+        assert!(item.text_content.is_none());
+        assert_eq!(item.content_size, tiny_png().len() as i64);
+        assert!(!item.replaces_previous);
+
+        let original = PathBuf::from(item.image_path.as_ref().unwrap());
+        assert!(original.exists(), "original image written");
+        assert_eq!(original.extension().unwrap(), "png");
+        assert!(
+            crate::images::thumbnail_path_for(&original).exists(),
+            "thumbnail written beside the original"
+        );
+
+        let meta: serde_json::Value =
+            serde_json::from_str(item.metadata.as_ref().unwrap()).unwrap();
+        assert_eq!(meta["format"], "png");
+        assert_eq!(meta["mime"], "image/png");
+        assert_eq!(meta["width"], 8);
+        assert_eq!(meta["height"], 8);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_capture_image_dedups_the_same_image_across_polls() {
+        let dir = temp_dir("dedup");
+        let monitor = image_monitor(&dir, 10);
+        let png = tiny_png();
+        let mut last_hash = None;
+
+        assert!(capture_image(&monitor, &png, &mut last_hash).is_some());
+        // The poll loop sees the same image every second while it sits on the
+        // clipboard; only the first poll may store it.
+        assert!(capture_image(&monitor, &png, &mut last_hash).is_none());
+        assert!(capture_image(&monitor, &png, &mut last_hash).is_none());
+
+        let stored = std::fs::read_dir(&dir).unwrap().count();
+        assert_eq!(stored, 2, "one original plus one thumbnail, not three pairs");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_capture_image_ignores_non_image_bytes() {
+        let dir = temp_dir("nonimage");
+        let monitor = image_monitor(&dir, 10);
+        let mut last_hash = None;
+
+        // Latin-1 text is non-UTF8 and reaches this path, but is not an image.
+        assert!(capture_image(&monitor, &[0xE9, 0xE8, 0xFC], &mut last_hash).is_none());
+        assert!(last_hash.is_none(), "non-images must not claim the hash slot");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_capture_image_respects_the_image_size_limit() {
+        let dir = temp_dir("toobig");
+        // 0 MB limit: any image is over it.
+        let monitor = image_monitor(&dir, 0);
+        let mut last_hash = None;
+
+        assert!(capture_image(&monitor, &tiny_png(), &mut last_hash).is_none());
+        assert!(
+            last_hash.is_some(),
+            "oversize image is remembered so it is logged once, not once a second"
+        );
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_capture_image_stores_a_different_image_after_the_first() {
+        let dir = temp_dir("second");
+        let monitor = image_monitor(&dir, 10);
+        let mut last_hash = None;
+
+        assert!(capture_image(&monitor, &tiny_png(), &mut last_hash).is_some());
+
+        let mut other = Vec::new();
+        let img = image::RgbImage::from_fn(8, 8, |_, _| image::Rgb([1, 2, 3]));
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(
+                &mut std::io::Cursor::new(&mut other),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        assert!(
+            capture_image(&monitor, &other, &mut last_hash).is_some(),
+            "a genuinely different image is a new capture"
+        );
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 4);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     // There is deliberately no test for `reassert_clipboard`. The previous

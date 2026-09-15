@@ -6,9 +6,8 @@ pub enum ContentType {
     Text,
     Code,
     Link,
-    // Image capture is disabled (it made the GNOME trash icon bounce); the variant
-    // is retained so re-enabling it does not require reshaping the enum.
-    #[allow(dead_code)]
+    /// Set by `capture_image` when the clipboard holds binary image bytes;
+    /// `detect_text_content_type` never returns it.
     Image,
     File,
 }

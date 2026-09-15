@@ -240,7 +240,6 @@ impl AppConfig {
     }
 
     /// Resolve the image_dir, expanding ~ to home directory.
-    #[allow(dead_code)]
     pub fn resolved_image_dir(&self) -> PathBuf {
         expand_tilde(&self.storage.image_dir)
     }
