@@ -1487,6 +1487,17 @@ pub fn run() {
 
             // Run retention on startup and schedule periodic runs
             let app_handle = app.handle().clone();
+            // Retention limits come from [storage] in config.toml. They used to
+            // be hardcoded to (90, 10000) here, so setting max_history_days = 0
+            // — the documented "unlimited" — deleted history anyway (#120).
+            let retention_cfg = config::AppConfig::load().unwrap_or_default().storage;
+            let retention_days = retention_cfg.retention_max_days();
+            let retention_count = retention_cfg.retention_max_count();
+            log::info!(
+                "Retention policy: max_days={}, max_count={}",
+                retention_days.map_or("unlimited".to_string(), |d| d.to_string()),
+                retention_count.map_or("unlimited".to_string(), |c| c.to_string()),
+            );
             std::thread::Builder::new()
                 .name("retention-scheduler".into())
                 .spawn(move || {
@@ -1497,7 +1508,10 @@ pub fn run() {
                         // Get storage from app state
                         if let Some(state) = app_handle.try_state::<AppState>() {
                             report_db_health(&state.storage);
-                            match state.storage.enforce_retention(Some(90), Some(10000)) {
+                            match state
+                                .storage
+                                .enforce_retention(retention_days, retention_count)
+                            {
                                 Ok(deleted) => {
                                     if deleted > 0 {
                                         log::info!("Retention: deleted {deleted} clips");
