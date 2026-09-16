@@ -23,7 +23,11 @@ Element.prototype.scrollIntoView = vi.fn();
 
 // Mock Tauri API
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+  // Default to a resolved promise: the real invoke always returns one, and
+  // components legitimately chain .then/.catch onto it. A bare vi.fn() returns
+  // undefined and blows up any component that awaits a command it did not
+  // explicitly stub.
+  invoke: vi.fn(() => Promise.resolve(null)),
   convertFileSrc: vi.fn((path: string) => `asset://${path}`),
 }));
 

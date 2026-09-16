@@ -144,13 +144,10 @@ impl Storage {
         }
         drop(conn);
 
-        // Clean up image file if present
+        // Clean up the image file and its thumbnail if present
         if let Some(clip) = clip {
             if let Some(ref image_path) = clip.image_path {
-                let path = std::path::Path::new(image_path);
-                if path.exists() {
-                    let _ = std::fs::remove_file(path);
-                }
+                crate::images::remove_image_and_thumbnail(std::path::Path::new(image_path));
             }
         }
 

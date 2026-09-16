@@ -55,12 +55,14 @@ cd src-tauri && cargo test  # Rust (requires GTK system libs)
 
 ### Verification gate
 
-All four pass before a PR goes up, and all four are standing acceptance criteria
-on every issue:
+All five pass before a PR goes up, and all five are standing acceptance criteria
+on every issue. `cargo fmt --check` is listed because CI enforces it — it was
+missing here once and failed a PR that passed everything else locally:
 
 ```bash
 cargo test                      # in src-tauri/
 cargo clippy -- -D warnings     # in src-tauri/
+cargo fmt --check               # in src-tauri/
 npm run test                    # vitest
 npm run lint                    # tsc --noEmit
 ```

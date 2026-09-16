@@ -6,6 +6,7 @@ mod clipboard;
 mod config;
 mod expander;
 mod hotkey;
+mod images;
 mod injector;
 mod logging;
 mod overlay;
@@ -295,6 +296,38 @@ fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
         win.hide().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Return an image clip's thumbnail as a `data:` URI, or `None` when the clip
+/// has no image or its thumbnail is missing.
+///
+/// Thumbnails travel over IPC rather than over Tauri's asset protocol so the
+/// frontend keeps its "no direct file access" boundary and the app's CSP does
+/// not have to be widened for one card. They are a few KB each.
+#[tauri::command]
+fn get_clip_thumbnail(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<Option<String>, String> {
+    let clip = state
+        .storage
+        .get_clip_by_id(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Clip not found: {id}"))?;
+
+    let Some(image_path) = clip.image_path else {
+        return Ok(None);
+    };
+
+    let thumb = images::thumbnail_path_for(std::path::Path::new(&image_path));
+    match std::fs::read(&thumb) {
+        Ok(bytes) => Ok(Some(images::to_data_uri(&bytes, "image/webp"))),
+        Err(e) => {
+            // A clip captured before thumbnails existed, or a half-written one.
+            log::debug!("No thumbnail for clip {id} at {}: {e}", thumb.display());
+            Ok(None)
+        }
+    }
 }
 
 #[tauri::command]
@@ -1154,6 +1187,7 @@ pub fn run() {
             uninstall_autostart,
             create_clip_from_text,
             copy_to_clipboard,
+            get_clip_thumbnail,
             hide_overlay,
         ])
         .setup(|app| {
@@ -1280,12 +1314,15 @@ pub fn run() {
                 // Start Wayland clipboard monitor. These four knobs come from
                 // [clipboard] in config.toml — max_content_size_mb used to be
                 // hardcoded to 10 and the dedup pair was never read at all.
-                let clip_cfg = config::AppConfig::load().unwrap_or_default().clipboard;
+                let full_cfg = config::AppConfig::load().unwrap_or_default();
+                let clip_cfg = full_cfg.clipboard.clone();
                 let monitor = clipboard::wayland::WaylandClipboard::new(
                     excluded_apps,
                     clip_cfg.max_content_size_mb,
                     clip_cfg.merge_growing,
                     clip_cfg.debounce_ms,
+                    full_cfg.storage.max_image_size_mb,
+                    full_cfg.resolved_image_dir(),
                 );
                 match monitor.start_monitoring(tx) {
                     Ok(()) => log::info!("Clipboard monitoring started"),
@@ -1487,6 +1524,17 @@ pub fn run() {
 
             // Run retention on startup and schedule periodic runs
             let app_handle = app.handle().clone();
+            // Retention limits come from [storage] in config.toml. They used to
+            // be hardcoded to (90, 10000) here, so setting max_history_days = 0
+            // — the documented "unlimited" — deleted history anyway (#120).
+            let retention_cfg = config::AppConfig::load().unwrap_or_default().storage;
+            let retention_days = retention_cfg.retention_max_days();
+            let retention_count = retention_cfg.retention_max_count();
+            log::info!(
+                "Retention policy: max_days={}, max_count={}",
+                retention_days.map_or("unlimited".to_string(), |d| d.to_string()),
+                retention_count.map_or("unlimited".to_string(), |c| c.to_string()),
+            );
             std::thread::Builder::new()
                 .name("retention-scheduler".into())
                 .spawn(move || {
@@ -1497,7 +1545,10 @@ pub fn run() {
                         // Get storage from app state
                         if let Some(state) = app_handle.try_state::<AppState>() {
                             report_db_health(&state.storage);
-                            match state.storage.enforce_retention(Some(90), Some(10000)) {
+                            match state
+                                .storage
+                                .enforce_retention(retention_days, retention_count)
+                            {
                                 Ok(deleted) => {
                                     if deleted > 0 {
                                         log::info!("Retention: deleted {deleted} clips");

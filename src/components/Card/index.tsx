@@ -54,6 +54,7 @@ function CardContent({ clip }: { clip: ClipData }) {
     case "image":
       return (
         <ImageCard
+          clipId={clip.id}
           imagePath={clip.image_path}
           metadata={clip.metadata}
         />

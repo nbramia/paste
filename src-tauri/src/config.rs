@@ -116,6 +116,23 @@ impl Default for StorageConfig {
     }
 }
 
+impl StorageConfig {
+    /// Age limit for retention, or `None` for unlimited.
+    ///
+    /// `0` means unlimited in config.toml. It has to become `None` rather than
+    /// reaching `enforce_retention` as a number: `Some(0)` reads as "delete
+    /// everything older than zero days", which is the whole history.
+    pub fn retention_max_days(&self) -> Option<u32> {
+        (self.max_history_days > 0).then_some(self.max_history_days)
+    }
+
+    /// Clip-count limit for retention, or `None` for unlimited. `0` is
+    /// unlimited here too, and `Some(0)` would likewise delete everything.
+    pub fn retention_max_count(&self) -> Option<usize> {
+        (self.max_history_count > 0).then_some(self.max_history_count as usize)
+    }
+}
+
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
@@ -223,7 +240,6 @@ impl AppConfig {
     }
 
     /// Resolve the image_dir, expanding ~ to home directory.
-    #[allow(dead_code)]
     pub fn resolved_image_dir(&self) -> PathBuf {
         expand_tilde(&self.storage.image_dir)
     }
@@ -313,6 +329,10 @@ mod tests {
         assert_eq!(config.clipboard.excluded_apps.len(), 4);
         assert_eq!(config.storage.max_history_days, 90);
         assert_eq!(config.storage.max_history_count, 10000);
+
+        // The default policy is a real limit, not unlimited.
+        assert_eq!(config.storage.retention_max_days(), Some(90));
+        assert_eq!(config.storage.retention_max_count(), Some(10000));
         assert_eq!(config.ui.theme, "system");
         assert_eq!(config.ui.filmstrip_height, 300);
         assert_eq!(config.ui.cards_visible, 6);
@@ -530,5 +550,39 @@ method = "xdotool"
         assert_eq!(config.expander.enabled, false);
         assert_eq!(config.expander.trigger, "immediate");
         assert_eq!(config.injection.method, "xdotool");
+    }
+
+    #[test]
+    fn test_retention_zero_means_unlimited_not_delete_everything() {
+        // `0` is documented as unlimited. It must become `None`: passing
+        // `Some(0)` to enforce_retention deletes clips older than zero days,
+        // which is the entire history.
+        let mut storage = StorageConfig {
+            max_history_days: 0,
+            max_history_count: 0,
+            ..Default::default()
+        };
+        assert_eq!(storage.retention_max_days(), None);
+        assert_eq!(storage.retention_max_count(), None);
+
+        // Each knob is independent of the other.
+        storage.max_history_days = 30;
+        assert_eq!(storage.retention_max_days(), Some(30));
+        assert_eq!(storage.retention_max_count(), None);
+
+        storage.max_history_count = 500;
+        assert_eq!(storage.retention_max_count(), Some(500));
+    }
+
+    #[test]
+    fn test_retention_zero_survives_a_config_round_trip() {
+        let toml_str = r#"
+[storage]
+max_history_days = 0
+max_history_count = 0
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.storage.retention_max_days(), None);
+        assert_eq!(config.storage.retention_max_count(), None);
     }
 }
