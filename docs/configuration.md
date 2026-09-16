@@ -50,6 +50,19 @@ Pinboard clips and favorites are exempt from retention policies.
 
 Retention is enforced automatically on startup and every hour. You can also trigger it manually from Settings.
 
+Set both `max_history_days` and `max_history_count` to `0` to keep clipboard
+history indefinitely. The effective policy is written to
+`~/.local/share/paste/paste.log` at startup, so you can confirm what is
+actually in force:
+
+```
+[INFO] paste_lib: Retention policy: max_days=unlimited, max_count=unlimited
+```
+
+> **Upgrading from 0.3.1 or earlier:** both limits were hardcoded to 90 days /
+> 10000 clips and this whole section was ignored. If you set `0` before and
+> history kept disappearing, that is why — it works from 0.4.0 on.
+
 ## UI
 
 ```toml

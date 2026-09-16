@@ -85,7 +85,7 @@ This is entirely optional and nothing else depends on it. Other compositors
 Download the latest `.deb` from [Releases](https://github.com/nbramia/paste/releases), then:
 
 ```bash
-sudo dpkg -i Paste_0.3.1_amd64.deb
+sudo dpkg -i Paste_0.4.0_amd64.deb
 ```
 
 ### From AppImage
@@ -93,8 +93,8 @@ sudo dpkg -i Paste_0.3.1_amd64.deb
 Download the latest `.AppImage` from [Releases](https://github.com/nbramia/paste/releases), then:
 
 ```bash
-chmod +x Paste_0.3.1_amd64.AppImage
-./Paste_0.3.1_amd64.AppImage
+chmod +x Paste_0.4.0_amd64.AppImage
+./Paste_0.4.0_amd64.AppImage
 ```
 
 ### From Source
@@ -148,6 +148,14 @@ Full reference: [docs/keyboard-shortcuts.md](docs/keyboard-shortcuts.md)
 ## Configuration
 
 Config file: `~/.config/paste/config.toml` (auto-created on first run). All options are editable via the Settings UI.
+
+To keep clipboard history forever, set both retention limits to `0`:
+
+```toml
+[storage]
+max_history_days = 0
+max_history_count = 0
+```
 
 Full reference: [docs/configuration.md](docs/configuration.md)
 

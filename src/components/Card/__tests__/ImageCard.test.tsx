@@ -53,13 +53,16 @@ describe("ImageCard", () => {
     expect(screen.getByText("Image")).toBeInTheDocument();
   });
 
-  it("shows dimensions and size from metadata", () => {
+  it("shows dimensions and size from metadata", async () => {
     mockInvoke.mockResolvedValue(null);
 
     render(
       <ImageCard clipId="clip-4" imagePath="/img/clip-4.png" metadata={META} />,
     );
 
+    // Let the in-flight thumbnail lookup settle before asserting, so the
+    // assertion never races the setState it triggers.
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalled());
     expect(screen.getByText("1920×1080 · 100 KB")).toBeInTheDocument();
   });
 
@@ -68,11 +71,12 @@ describe("ImageCard", () => {
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
-  it("survives malformed metadata", () => {
+  it("survives malformed metadata", async () => {
     mockInvoke.mockResolvedValue(null);
     render(
       <ImageCard clipId="clip-4" imagePath="/img/x.png" metadata={"{oops"} />,
     );
+    await waitFor(() => expect(mockInvoke).toHaveBeenCalled());
     expect(screen.getByText("Image")).toBeInTheDocument();
   });
 });
