@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { PinboardView } from "../index";
 import { mockClips } from "../../../test/fixtures";
@@ -34,6 +34,15 @@ async function openWorkPinboard(onConfirmClip = vi.fn()) {
   const utils = renderView(onConfirmClip);
   fireEvent.click(screen.getByText("Work"));
   await waitFor(() => expect(screen.getByText(/Hello, world!/)).toBeInTheDocument());
+  // Flush passive effects before any test fires a key.
+  //
+  // PinboardView registers its window keydown listener in an effect gated on
+  // `clips.length === 0`, so the listener only exists once clips have loaded.
+  // waitFor resolves as soon as the clip text is in the DOM, which can be
+  // before that effect has run — firing into that gap drops the key and the
+  // test then times out waiting for a selection change that can never happen.
+  // Only reachable in tests; a user cannot press a key that fast.
+  await act(async () => {});
   return utils;
 }
 
