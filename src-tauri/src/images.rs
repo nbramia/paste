@@ -133,8 +133,7 @@ pub fn to_data_uri(bytes: &[u8], mime: &str) -> String {
 /// a data URI, and adding a dependency for that is a decision CLAUDE.md asks to
 /// escalate.
 fn base64_encode(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
@@ -188,10 +187,7 @@ mod tests {
             detect_image_format(&[0xFF, 0xD8, 0xFF, 0xE0]).unwrap().mime,
             "image/jpeg"
         );
-        assert_eq!(
-            detect_image_format(b"GIF89a....").unwrap().extension,
-            "gif"
-        );
+        assert_eq!(detect_image_format(b"GIF89a....").unwrap().extension, "gif");
         assert_eq!(
             detect_image_format(b"RIFF\x00\x00\x00\x00WEBPVP8 ")
                 .unwrap()

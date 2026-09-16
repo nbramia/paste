@@ -305,7 +305,10 @@ fn hide_overlay(app: tauri::AppHandle) -> Result<(), String> {
 /// frontend keeps its "no direct file access" boundary and the app's CSP does
 /// not have to be widened for one card. They are a few KB each.
 #[tauri::command]
-fn get_clip_thumbnail(state: tauri::State<'_, AppState>, id: String) -> Result<Option<String>, String> {
+fn get_clip_thumbnail(
+    state: tauri::State<'_, AppState>,
+    id: String,
+) -> Result<Option<String>, String> {
     let clip = state
         .storage
         .get_clip_by_id(&id)

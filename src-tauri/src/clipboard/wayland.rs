@@ -759,14 +759,28 @@ mod tests {
 
     #[test]
     fn test_wayland_clipboard_new() {
-        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true, 500, 10, PathBuf::from("/tmp/paste-test-images"));
+        let wl = WaylandClipboard::new(
+            vec!["1password".into(), "keepassxc".into()],
+            10,
+            true,
+            500,
+            10,
+            PathBuf::from("/tmp/paste-test-images"),
+        );
         assert_eq!(wl.excluded_apps.len(), 2);
         assert_eq!(wl.max_content_size_bytes, 10 * 1024 * 1024);
     }
 
     #[test]
     fn test_is_excluded() {
-        let wl = WaylandClipboard::new(vec!["1password".into(), "keepassxc".into()], 10, true, 500, 10, PathBuf::from("/tmp/paste-test-images"));
+        let wl = WaylandClipboard::new(
+            vec!["1password".into(), "keepassxc".into()],
+            10,
+            true,
+            500,
+            10,
+            PathBuf::from("/tmp/paste-test-images"),
+        );
         assert!(wl.is_excluded(&Some("1Password".into())));
         assert!(wl.is_excluded(&Some("KeePassXC".into())));
         assert!(wl.is_excluded(&Some("org.keepassxc.KeePassXC".into())));
@@ -776,7 +790,14 @@ mod tests {
 
     #[test]
     fn test_is_excluded_case_insensitive() {
-        let wl = WaylandClipboard::new(vec!["Bitwarden".into()], 10, true, 500, 10, PathBuf::from("/tmp/paste-test-images"));
+        let wl = WaylandClipboard::new(
+            vec!["Bitwarden".into()],
+            10,
+            true,
+            500,
+            10,
+            PathBuf::from("/tmp/paste-test-images"),
+        );
         assert!(wl.is_excluded(&Some("bitwarden".into())));
         assert!(wl.is_excluded(&Some("BITWARDEN".into())));
         assert!(wl.is_excluded(&Some("Bitwarden".into())));
@@ -1048,7 +1069,10 @@ mod tests {
         assert!(capture_image(&monitor, &png, &mut last_hash).is_none());
 
         let stored = std::fs::read_dir(&dir).unwrap().count();
-        assert_eq!(stored, 2, "one original plus one thumbnail, not three pairs");
+        assert_eq!(
+            stored, 2,
+            "one original plus one thumbnail, not three pairs"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -1061,7 +1085,10 @@ mod tests {
 
         // Latin-1 text is non-UTF8 and reaches this path, but is not an image.
         assert!(capture_image(&monitor, &[0xE9, 0xE8, 0xFC], &mut last_hash).is_none());
-        assert!(last_hash.is_none(), "non-images must not claim the hash slot");
+        assert!(
+            last_hash.is_none(),
+            "non-images must not claim the hash slot"
+        );
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
 
         std::fs::remove_dir_all(&dir).ok();
