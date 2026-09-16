@@ -423,6 +423,75 @@ fn tool_available(tool: &str, version_flag: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Choose which image target to read from the clipboard's advertised list.
+///
+/// PNG is preferred because it is lossless and universally offered; anything
+/// else recognised is taken in the order the owner advertised it.
+pub fn pick_image_target(targets: &[&str]) -> Option<String> {
+    const KNOWN: [&str; 5] = [
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "image/gif",
+        "image/bmp",
+    ];
+
+    let offered: Vec<&str> = targets.iter().map(|t| t.trim()).collect();
+    if let Some(png) = offered.iter().find(|t| t.eq_ignore_ascii_case("image/png")) {
+        return Some(png.to_string());
+    }
+    offered
+        .iter()
+        .find(|t| KNOWN.iter().any(|k| t.eq_ignore_ascii_case(k)))
+        .map(|t| t.to_string())
+}
+
+/// The image MIME type the clipboard is offering, if any.
+fn offered_image_mime(reader: Reader) -> Option<String> {
+    let output = match reader {
+        Reader::Xclip => Command::new("xclip")
+            .args(["-selection", "clipboard", "-t", "TARGETS", "-o"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output(),
+        Reader::WlPaste => Command::new("wl-paste")
+            .arg("-l")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output(),
+    }
+    .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+    let listing = String::from_utf8_lossy(&output.stdout);
+    let targets: Vec<&str> = listing.lines().collect();
+    pick_image_target(&targets)
+}
+
+/// Read the clipboard as a specific MIME type.
+fn read_clipboard_typed(reader: Reader, mime: &str) -> Option<Vec<u8>> {
+    let output = match reader {
+        Reader::Xclip => Command::new("xclip")
+            .args(["-selection", "clipboard", "-t", mime, "-o"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output(),
+        Reader::WlPaste => Command::new("wl-paste")
+            .args(["--no-newline", "--type", mime])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output(),
+    }
+    .ok()?;
+
+    if !output.status.success() || output.stdout.is_empty() {
+        return None;
+    }
+    Some(output.stdout)
+}
+
 /// Read the CLIPBOARD selection as bytes, or `None` when it holds no text.
 fn read_clipboard_text(reader: Reader) -> Option<Vec<u8>> {
     let output = match reader {
@@ -487,6 +556,25 @@ fn run_text_watcher(
         thread::sleep(std::time::Duration::from_secs(1));
 
         let Some(mut content) = read_clipboard_text(guard.reader()) else {
+            // No text — but that is exactly what a copied image looks like.
+            // A Wayland-native owner (a screenshot tool, a browser) correctly
+            // refuses the STRING target, so `xclip -o` fails rather than
+            // returning bytes. Check for an offered image before concluding
+            // the selection is gone (#124).
+            if let Some(mime) = offered_image_mime(guard.reader()) {
+                if let Some(bytes) = read_clipboard_typed(guard.reader(), &mime) {
+                    if let Some(item) = capture_image(monitor, &bytes, &mut last_image_hash) {
+                        if tx.send(item).is_err() {
+                            info!("Clipboard channel closed, stopping clipboard monitor");
+                            return Ok(());
+                        }
+                    }
+                }
+                // Never re-assert over an image, even one already captured:
+                // doing so replaces the user's screenshot with stale text.
+                continue;
+            }
+
             if let Some(ref content) = last_content {
                 debug!("Clipboard lost — re-asserting");
                 reassert_clipboard(content, last_html.as_deref());
@@ -1135,6 +1223,68 @@ mod tests {
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 4);
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_pick_image_target_prefers_png() {
+        // A real GNOME screenshot advertises exactly this.
+        assert_eq!(
+            pick_image_target(&["image/png", "TARGETS", "TIMESTAMP"]),
+            Some("image/png".into())
+        );
+        // PNG wins even when it is not first.
+        assert_eq!(
+            pick_image_target(&["image/jpeg", "image/png"]),
+            Some("image/png".into())
+        );
+    }
+
+    #[test]
+    fn test_pick_image_target_falls_back_to_other_formats() {
+        assert_eq!(
+            pick_image_target(&["TARGETS", "image/jpeg"]),
+            Some("image/jpeg".into())
+        );
+        assert_eq!(
+            pick_image_target(&["image/webp"]),
+            Some("image/webp".into())
+        );
+    }
+
+    #[test]
+    fn test_pick_image_target_ignores_text_clipboards() {
+        // The ordinary text case must not be mistaken for an image, or every
+        // text copy would take the image branch.
+        assert_eq!(
+            pick_image_target(&[
+                "UTF8_STRING",
+                "STRING",
+                "TEXT",
+                "text/plain;charset=utf-8",
+                "text/plain",
+                "TARGETS",
+                "TIMESTAMP",
+            ]),
+            None
+        );
+        assert_eq!(pick_image_target(&[]), None);
+        // text/html is not an image either.
+        assert_eq!(pick_image_target(&["text/html", "text/plain"]), None);
+    }
+
+    #[test]
+    fn test_pick_image_target_tolerates_whitespace_and_case() {
+        // wl-paste -l and xclip -t TARGETS -o both emit one per line; trailing
+        // whitespace has shown up in the wild.
+        assert_eq!(
+            pick_image_target(&["  image/png  "]),
+            Some("image/png".into())
+        );
+        assert_eq!(
+            pick_image_target(&["IMAGE/PNG"]),
+            Some("IMAGE/PNG".into()),
+            "matched case-insensitively but read back with the owner's spelling"
+        );
     }
 
     // There is deliberately no test for `reassert_clipboard`. The previous
