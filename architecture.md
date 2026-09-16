@@ -127,7 +127,16 @@ xclip -selection clipboard -o        -> reads current clipboard text
 
 - Polling-based: a background thread periodically reads the clipboard via `xclip -selection clipboard -o` through XWayland
 - Each poll's content goes through `ClipDedup`, which drops exact repeats, folds a grown selection into the clip it extends, and debounces rapid re-copies (see Deduplication below)
-- **Images ride the same poll as text** — `xclip -o` serves whatever the selection owner offers regardless of the target requested, so a copied image arrives on the ordinary text read as non-UTF8 bytes. Those bytes are sniffed for image magic numbers and captured from there (#122). There is no second polling loop: the original design ran one against `wl-paste --type image/png` once a second, and that rapid spawning is what made the GNOME trash icon bounce, so capture was disabled outright and every copied screenshot was discarded. Folding it into the existing read costs no extra subprocess
+- **Images ride the same poll as text** — there is no second polling loop. The original design ran one against `wl-paste --type image/png` once a second, and that rapid spawning is what made the GNOME trash icon bounce, so capture was disabled outright and every copied screenshot was discarded (#122). Images arrive on the ordinary poll by one of two routes, because what `xclip -o` does with an image depends on who owns the selection:
+
+  | Owner | `xclip -o` | Route |
+  |-------|-----------|-------|
+  | Wayland-native (screenshot tool, browser) | fails — `target STRING not available` | empty read → check `TARGETS` for an image → read it by MIME type |
+  | An X11 client such as `xclip -i` | returns the raw bytes | non-UTF8 branch → sniff magic numbers |
+
+  The Wayland route is the one that matters in practice and was missed at first (#124): a real owner correctly refuses `STRING`, so a screenshot reads as *no text*. That put it on the "clipboard lost" branch, which re-asserted the previous text over it — Paste was destroying screenshots rather than merely ignoring them. The empty-read branch now checks for an offered image first and never re-asserts when one is present, including when it has already been captured.
+
+  Bytes are sniffed for image magic numbers on both routes rather than trusted: a latin-1 text selection is also non-UTF8 and must not be stored as a picture. Neither route costs an extra subprocess while the clipboard holds text
 - The original design used `wl-paste --watch` for event-driven monitoring, but this was replaced because `wl-paste` caused desktop side-effects on some compositors
 - Re-copying clips to the clipboard uses a `copy_to_clipboard` Tauri command that invokes `xclip -selection clipboard`
 
