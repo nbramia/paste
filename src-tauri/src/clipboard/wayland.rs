@@ -1,7 +1,9 @@
+use std::io::{self, Read};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 
 use log::{debug, error, info, warn};
 
@@ -49,7 +51,7 @@ impl WaylandClipboard {
         // Try hyprctl first (Hyprland)
         if let Ok(output) = Command::new("hyprctl")
             .args(["activewindow", "-j"])
-            .output()
+            .output_timeout()
         {
             if output.status.success() {
                 if let Ok(text) = std::str::from_utf8(&output.stdout) {
@@ -67,7 +69,7 @@ impl WaylandClipboard {
         // Try swaymsg (Sway)
         if let Ok(output) = Command::new("swaymsg")
             .args(["-t", "get_tree", "--raw"])
-            .output()
+            .output_timeout()
         {
             if output.status.success() {
                 if let Ok(text) = std::str::from_utf8(&output.stdout) {
@@ -92,7 +94,7 @@ impl WaylandClipboard {
                 "--method",
                 "org.gnome.shell.extensions.FocusedWindow.Get",
             ])
-            .output()
+            .output_timeout()
         {
             if output.status.success() {
                 if let Ok(text) = std::str::from_utf8(&output.stdout) {
@@ -125,7 +127,7 @@ impl WaylandClipboard {
     fn read_html_content() -> Option<String> {
         let output = Command::new("wl-paste")
             .args(["--no-newline", "--type", "text/html"])
-            .output()
+            .output_timeout()
             .ok()?;
 
         if output.status.success() {
@@ -269,6 +271,72 @@ fn reassert_clipboard(content: &str, html: Option<&str>) {
 /// so the cross-check costs at most one extra subprocess per minute and none
 /// at all while the user is actively copying.
 const STALE_CHECK_POLLS: u32 = 60;
+
+/// How long any clipboard or focus-query subprocess may run.
+///
+/// Reading a selection means asking its owner for the data, and an owner that
+/// never answers leaves `xclip` or `wl-paste` blocked forever. Without a
+/// deadline that blocks the whole poll loop: a `wl-paste` spawned by the
+/// staleness cross-check hung for 20 hours and nothing was captured in that
+/// time, with no log line to show for it.
+const SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(2);
+
+trait OutputTimeout {
+    /// `Command::output()` with [`SUBPROCESS_TIMEOUT`]; stderr is discarded.
+    fn output_timeout(&mut self) -> io::Result<Output>;
+}
+
+impl OutputTimeout for Command {
+    fn output_timeout(&mut self) -> io::Result<Output> {
+        run_with_timeout(self, SUBPROCESS_TIMEOUT)
+    }
+}
+
+/// Run `cmd` to completion, killing it if it outlives `timeout`.
+///
+/// stdout is drained on a helper thread so a large payload (a screenshot)
+/// cannot deadlock on a full pipe. On timeout the child is killed and reaped;
+/// if a grandchild still holds the pipe, only the helper thread is left
+/// waiting, never the caller.
+fn run_with_timeout(cmd: &mut Command, timeout: Duration) -> io::Result<Output> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("child stdout not captured"))?;
+
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        let _ = tx.send(buf);
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok(stdout) => Ok(Output {
+            status: child.wait()?,
+            stdout,
+            stderr: Vec::new(),
+        }),
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            warn!(
+                "{:?} did not finish within {:?}; killed it",
+                cmd.get_program(),
+                timeout
+            );
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "clipboard subprocess timed out",
+            ))
+        }
+    }
+}
 
 /// A tool that can read the CLIPBOARD selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -453,12 +521,12 @@ fn offered_image_mime(reader: Reader) -> Option<String> {
             .args(["-selection", "clipboard", "-t", "TARGETS", "-o"])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .output(),
+            .output_timeout(),
         Reader::WlPaste => Command::new("wl-paste")
             .arg("-l")
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .output(),
+            .output_timeout(),
     }
     .ok()?;
 
@@ -477,12 +545,12 @@ fn read_clipboard_typed(reader: Reader, mime: &str) -> Option<Vec<u8>> {
             .args(["-selection", "clipboard", "-t", mime, "-o"])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .output(),
+            .output_timeout(),
         Reader::WlPaste => Command::new("wl-paste")
             .args(["--no-newline", "--type", mime])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .output(),
+            .output_timeout(),
     }
     .ok()?;
 
@@ -499,12 +567,12 @@ fn read_clipboard_text(reader: Reader) -> Option<Vec<u8>> {
             .args(["-selection", "clipboard", "-o"])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .output(),
+            .output_timeout(),
         Reader::WlPaste => Command::new("wl-paste")
             .args(["--no-newline"])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .output(),
+            .output_timeout(),
     }
     .ok()?;
 
@@ -1295,4 +1363,30 @@ mod tests {
     // strategy in architecture.md, anything needing real clipboard access is
     // mocked; covering this properly means making the subprocess injectable,
     // which is worth more than the "no panic" assertion was.
+
+    #[test]
+    fn test_run_with_timeout_kills_a_hung_subprocess() {
+        let start = std::time::Instant::now();
+        let result = run_with_timeout(Command::new("sleep").arg("30"), Duration::from_millis(200));
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn test_run_with_timeout_returns_output_of_a_quick_subprocess() {
+        let output =
+            run_with_timeout(Command::new("printf").arg("hello"), Duration::from_secs(5)).unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"hello");
+    }
+
+    #[test]
+    fn test_run_with_timeout_handles_output_larger_than_a_pipe_buffer() {
+        let output = run_with_timeout(
+            Command::new("head").args(["-c", "1000000", "/dev/zero"]),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        assert_eq!(output.stdout.len(), 1_000_000);
+    }
 }

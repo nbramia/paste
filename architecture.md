@@ -208,6 +208,18 @@ The cross-check costs at most one extra subprocess per minute, and none while
 the user is actively copying. 1Hz `wl-paste` polling — the thing that caused
 the desktop side-effects behind decision 2 — happens only while failed over.
 
+#### Subprocess deadlines
+
+Every subprocess the poll loop spawns — the text, image and `TARGETS` reads,
+the HTML read, and source-app detection — runs under a 2-second deadline and
+is killed if it overruns. Reading a selection means asking its owner for the
+data, and an owner that never answers leaves `xclip` or `wl-paste` blocked
+indefinitely. Before the deadline existed, that blocked the loop itself: a
+`wl-paste` spawned by the staleness cross-check hung for 20 hours and nothing
+was captured in that time, with no log line. It looked source-dependent
+because capture worked after each restart until the next unresponsive owner.
+A timeout is logged at warn level and treated as an empty read.
+
 #### Application Exclusion
 
 Certain applications should never have their clipboard content captured (password managers, etc.).
