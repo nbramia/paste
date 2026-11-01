@@ -121,7 +121,7 @@ pub fn remove_image_and_thumbnail(image_path: &Path) {
 ///
 /// Thumbnails reach the frontend this way rather than over Tauri's asset
 /// protocol: it keeps the "no direct file access from the frontend" boundary
-/// from CLAUDE.md, and avoids widening the CSP for the whole app so that one
+/// from AGENTS.md, and avoids widening the CSP for the whole app so that one
 /// card can show a picture.
 pub fn to_data_uri(bytes: &[u8], mime: &str) -> String {
     format!("data:{mime};base64,{}", base64_encode(bytes))
@@ -130,7 +130,7 @@ pub fn to_data_uri(bytes: &[u8], mime: &str) -> String {
 /// Minimal standard-alphabet base64 encoder with padding.
 ///
 /// Hand-rolled because the only caller needs a few KB of thumbnail turned into
-/// a data URI, and adding a dependency for that is a decision CLAUDE.md asks to
+/// a data URI, and adding a dependency for that is a decision AGENTS.md asks to
 /// escalate.
 fn base64_encode(input: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

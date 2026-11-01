@@ -14,9 +14,9 @@ The result is a codebase that's consistent, well-documented, and built to be mai
 
 ## The Framework
 
-### CLAUDE.md — The Operating Manual
+### AGENTS.md — The Operating Manual
 
-[CLAUDE.md](CLAUDE.md) is the primary document that guides agent behavior. It defines:
+[AGENTS.md](AGENTS.md) is the primary document that guides agent behavior. It defines:
 
 - Stack conventions (what patterns to use, what to avoid)
 - Architecture boundaries (where the IPC barrier is, how storage works)
@@ -58,12 +58,12 @@ Deliberately narrow. A bad commit is easy to revert; force-pushed history and ha
 
 ### Conventions Over Configuration
 
-This project uses documented conventions rather than opaque configuration files. The rules live in CLAUDE.md and skill files where they're readable, auditable, and versionable. The hooks in `settings.json` enforce the most critical constraints; everything else is convention.
+This project uses documented conventions rather than opaque configuration files. The rules live in AGENTS.md and skill files where they're readable, auditable, and versionable. The hooks in `settings.json` enforce the most critical constraints; everything else is convention.
 
 Why this approach:
-- **Readable**: Anyone (human or agent) can read CLAUDE.md and understand the rules
+- **Readable**: Anyone (human or agent) can read AGENTS.md and understand the rules
 - **Auditable**: Conventions are in version control with full git history
-- **Flexible**: Adding a new rule is adding a line to CLAUDE.md, not debugging a config schema
+- **Flexible**: Adding a new rule is adding a line to AGENTS.md, not debugging a config schema
 - **Portable**: The same conventions work across different AI tools and workflows
 
 ## Development Workflow
@@ -121,7 +121,7 @@ When the user asks to...
 Step-by-step instructions for the agent...
 ```
 
-Then reference it in the skills table in CLAUDE.md.
+Then reference it in the skills table in AGENTS.md.
 
 ## Architecture
 
