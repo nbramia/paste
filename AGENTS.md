@@ -130,12 +130,8 @@ Stop and ask a human before implementing any of these:
 | Skill | Purpose |
 |-------|---------|
 | `/draft-issue` | Create GitHub issues optimized for agent implementation |
-| `/implement` | Full lifecycle orchestrator: plan → code → review → merge |
-| `/implement-plan` | Explore codebase, produce implementation plan |
-| `/implement-code` | Write code, tests, commit, open PR |
-| `/implement-address` | Fix review findings |
-| `/merge-pr` | Verify checks, merge, clean up |
-| `/pr-check` | Validate PR against project standards |
+| `/implement` | Build with subagents, adversarial review, verification |
+| `ship <pr>` | Wait for checks, merge, clean up, watch the deploy |
 | `/catchup` | Summarize recent project activity |
 | `/standup` | Personal daily summary |
 | `/stale` | Find stale PRs, orphan branches, dead issues |
@@ -144,8 +140,6 @@ Stop and ask a human before implementing any of these:
 ## Framework Philosophy
 
 This project uses **conventions over configuration**. Agent behavior is defined in this file and the skill files — not in opaque config schemas. The rules are readable, auditable, and versionable. Hooks in `.claude/settings.json` enforce the most critical constraints (destructive operations, release workflow); everything else is convention.
-
-The `/implement` orchestrator writes review findings to `/tmp/paste-implement-findings-<issue>-<pass>.md`. The `/implement-address` skill reads and resolves them. This is the inter-skill communication pattern.
 
 ## Rules
 

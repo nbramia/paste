@@ -27,23 +27,17 @@ Every agent session loads this file automatically. It's the difference between "
 
 ### Skills — Composable Workflows
 
-The `.claude/skills/` directory contains 11 skill definitions that decompose development into structured, repeatable workflows:
+Development uses these skills and commands:
 
 | Skill | Role |
 |-------|------|
 | `/draft-issue` | Scope work into well-defined GitHub issues with acceptance criteria |
-| `/implement` | **Orchestrator** — coordinates plan → code → review → merge without writing code itself |
-| `/implement-plan` | Explore the codebase and produce a concrete implementation plan |
-| `/implement-code` | Write code and tests on a feature branch, open a PR |
-| `/implement-address` | Fix review findings from the orchestrator's review passes |
-| `/merge-pr` | Verify checks pass, merge, clean up branches |
-| `/pr-check` | Validate a PR against project standards (7 checks) |
+| `/implement` | Take a change from request to merged: subagents build it, another model tries to break it, it gets verified |
+| `ship <pr>` | Wait for checks, merge, clean up, watch the deploy |
 | `/catchup` | Summarize recent project activity |
 | `/standup` | Generate a daily status update |
 | `/stale` | Find stale PRs, orphan branches, dead issues |
 | `/mine-for-ideas` | Analyze a topic and produce structured recommendations |
-
-The key design: `/implement` is an **orchestrator** that delegates to sub-skills. It doesn't write code — it coordinates planning, coding, reviewing, and merging as separate phases. This separation means each phase can be retried independently if something goes wrong.
 
 ### Hooks — Automated Guardrails
 
@@ -91,7 +85,7 @@ cd src-tauri && cargo test   # Rust tests
 
 ### PR Standards
 
-PRs are validated by the `/pr-check` skill against 7 checks:
+PRs should meet these standards:
 
 1. **Branch naming**: `feat/42-short-description`
 2. **Title format**: `feat: concise description` (conventional commits)
