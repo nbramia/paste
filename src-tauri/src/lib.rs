@@ -1530,9 +1530,9 @@ pub fn run() {
                                             if let Some(state) = app_handle_exp.try_state::<AppState>() {
                                                 // Delete abbreviation (+ the typed boundary key)
                                                 let _ = state.injector.send_backspaces(backspace_count);
-                                                std::thread::sleep(std::time::Duration::from_millis(50));
-                                                // Insert expansion plus the trigger char. ydotool
-                                                // types ASCII only, so non-ASCII goes via clipboard.
+                                                std::thread::sleep(std::time::Duration::from_millis(5));
+                                                // Insert expansion plus the trigger char. Typing
+                                                // covers ASCII only, so non-ASCII goes via clipboard.
                                                 let _ = if needs_clipboard(&full_text) {
                                                     state.injector.inject_via_clipboard(&full_text)
                                                 } else {

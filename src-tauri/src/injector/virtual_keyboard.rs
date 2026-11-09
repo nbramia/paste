@@ -60,6 +60,160 @@ pub fn init() {
     let _ = device();
 }
 
+/// US-layout key and Shift state that produce an ASCII character, or `None`
+/// for characters the virtual keyboard cannot type.
+pub fn key_for_char(ch: char) -> Option<(KeyCode, bool)> {
+    const LETTERS: [KeyCode; 26] = [
+        KeyCode::KEY_A,
+        KeyCode::KEY_B,
+        KeyCode::KEY_C,
+        KeyCode::KEY_D,
+        KeyCode::KEY_E,
+        KeyCode::KEY_F,
+        KeyCode::KEY_G,
+        KeyCode::KEY_H,
+        KeyCode::KEY_I,
+        KeyCode::KEY_J,
+        KeyCode::KEY_K,
+        KeyCode::KEY_L,
+        KeyCode::KEY_M,
+        KeyCode::KEY_N,
+        KeyCode::KEY_O,
+        KeyCode::KEY_P,
+        KeyCode::KEY_Q,
+        KeyCode::KEY_R,
+        KeyCode::KEY_S,
+        KeyCode::KEY_T,
+        KeyCode::KEY_U,
+        KeyCode::KEY_V,
+        KeyCode::KEY_W,
+        KeyCode::KEY_X,
+        KeyCode::KEY_Y,
+        KeyCode::KEY_Z,
+    ];
+    const DIGITS: [KeyCode; 10] = [
+        KeyCode::KEY_0,
+        KeyCode::KEY_1,
+        KeyCode::KEY_2,
+        KeyCode::KEY_3,
+        KeyCode::KEY_4,
+        KeyCode::KEY_5,
+        KeyCode::KEY_6,
+        KeyCode::KEY_7,
+        KeyCode::KEY_8,
+        KeyCode::KEY_9,
+    ];
+    const SHIFTED_DIGITS: &str = ")!@#$%^&*(";
+
+    if ch.is_ascii_lowercase() {
+        return Some((LETTERS[(ch as u8 - b'a') as usize], false));
+    }
+    if ch.is_ascii_uppercase() {
+        return Some((LETTERS[(ch as u8 - b'A') as usize], true));
+    }
+    if ch.is_ascii_digit() {
+        return Some((DIGITS[(ch as u8 - b'0') as usize], false));
+    }
+    if let Some(i) = SHIFTED_DIGITS.find(ch) {
+        return Some((DIGITS[i], true));
+    }
+    let mapped = match ch {
+        ' ' => (KeyCode::KEY_SPACE, false),
+        '\n' => (KeyCode::KEY_ENTER, false),
+        '\t' => (KeyCode::KEY_TAB, false),
+        '-' => (KeyCode::KEY_MINUS, false),
+        '_' => (KeyCode::KEY_MINUS, true),
+        '=' => (KeyCode::KEY_EQUAL, false),
+        '+' => (KeyCode::KEY_EQUAL, true),
+        '[' => (KeyCode::KEY_LEFTBRACE, false),
+        '{' => (KeyCode::KEY_LEFTBRACE, true),
+        ']' => (KeyCode::KEY_RIGHTBRACE, false),
+        '}' => (KeyCode::KEY_RIGHTBRACE, true),
+        ';' => (KeyCode::KEY_SEMICOLON, false),
+        ':' => (KeyCode::KEY_SEMICOLON, true),
+        '\'' => (KeyCode::KEY_APOSTROPHE, false),
+        '"' => (KeyCode::KEY_APOSTROPHE, true),
+        '`' => (KeyCode::KEY_GRAVE, false),
+        '~' => (KeyCode::KEY_GRAVE, true),
+        '\\' => (KeyCode::KEY_BACKSLASH, false),
+        '|' => (KeyCode::KEY_BACKSLASH, true),
+        ',' => (KeyCode::KEY_COMMA, false),
+        '<' => (KeyCode::KEY_COMMA, true),
+        '.' => (KeyCode::KEY_DOT, false),
+        '>' => (KeyCode::KEY_DOT, true),
+        '/' => (KeyCode::KEY_SLASH, false),
+        '?' => (KeyCode::KEY_SLASH, true),
+        _ => return None,
+    };
+    Some(mapped)
+}
+
+/// Emit one key transition, then pause briefly.
+fn emit_key(dev: &mut VirtualDevice, code: KeyCode, value: i32) -> bool {
+    let event = InputEvent::new(EventType::KEY.0, code.0, value);
+    if let Err(e) = dev.emit(&[event]) {
+        warn!("Virtual keyboard emit failed: {e}");
+        return false;
+    }
+    thread::sleep(Duration::from_millis(1));
+    true
+}
+
+/// Type ASCII text through the persistent virtual keyboard, assuming a US
+/// layout. Returns false without emitting anything when the device is
+/// unavailable or the text holds a character it cannot type; the caller
+/// then falls back to an external tool.
+///
+/// Typing this way takes a few milliseconds where spawning `ydotool type`
+/// takes hundreds. That matters for the text expander, because keys the user
+/// types while an expansion is still being injected land in the middle of it.
+pub fn type_text(text: &str) -> bool {
+    let Some(keys) = text.chars().map(key_for_char).collect::<Option<Vec<_>>>() else {
+        return false;
+    };
+    let Some(dev) = device() else {
+        return false;
+    };
+    let mut dev = match dev.lock() {
+        Ok(d) => d,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    for (key, shift) in keys {
+        let ok = (!shift || emit_key(&mut dev, KeyCode::KEY_LEFTSHIFT, 1))
+            && emit_key(&mut dev, key, 1)
+            && emit_key(&mut dev, key, 0)
+            && (!shift || emit_key(&mut dev, KeyCode::KEY_LEFTSHIFT, 0));
+        if !ok {
+            return false;
+        }
+    }
+    true
+}
+
+/// Emit `count` Backspace presses through the persistent virtual keyboard.
+/// Returns false when the device is unavailable or an emit fails — the
+/// caller should fall back to an external tool.
+///
+/// This is the only backspace path that reaches native Wayland windows:
+/// `xdotool` talks to XWayland and its keys never arrive in a Wayland client.
+pub fn backspaces(count: usize) -> bool {
+    let Some(dev) = device() else {
+        return false;
+    };
+    let mut dev = match dev.lock() {
+        Ok(d) => d,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    for _ in 0..count {
+        if !(emit_key(&mut dev, KeyCode::KEY_BACKSPACE, 1)
+            && emit_key(&mut dev, KeyCode::KEY_BACKSPACE, 0))
+        {
+            return false;
+        }
+    }
+    true
+}
+
 /// Emit Ctrl+V through the persistent virtual keyboard.
 /// Returns false when the device is unavailable — the caller should fall
 /// back to an external tool.
@@ -88,4 +242,45 @@ pub fn ctrl_v() -> bool {
         thread::sleep(Duration::from_millis(5));
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_letters_with_shift_for_uppercase() {
+        assert_eq!(key_for_char('a'), Some((KeyCode::KEY_A, false)));
+        assert_eq!(key_for_char('Z'), Some((KeyCode::KEY_Z, true)));
+    }
+
+    #[test]
+    fn maps_digits_and_shifted_digits() {
+        assert_eq!(key_for_char('0'), Some((KeyCode::KEY_0, false)));
+        assert_eq!(key_for_char('!'), Some((KeyCode::KEY_1, true)));
+        assert_eq!(key_for_char('('), Some((KeyCode::KEY_9, true)));
+        assert_eq!(key_for_char(')'), Some((KeyCode::KEY_0, true)));
+    }
+
+    #[test]
+    fn maps_punctuation_and_whitespace() {
+        assert_eq!(key_for_char('@'), Some((KeyCode::KEY_2, true)));
+        assert_eq!(key_for_char(':'), Some((KeyCode::KEY_SEMICOLON, true)));
+        assert_eq!(key_for_char('\''), Some((KeyCode::KEY_APOSTROPHE, false)));
+        assert_eq!(key_for_char('\n'), Some((KeyCode::KEY_ENTER, false)));
+        assert_eq!(key_for_char(' '), Some((KeyCode::KEY_SPACE, false)));
+    }
+
+    #[test]
+    fn every_printable_ascii_char_is_typeable() {
+        for b in 0x20u8..0x7f {
+            assert!(key_for_char(b as char).is_some(), "{:?}", b as char);
+        }
+    }
+
+    #[test]
+    fn non_ascii_is_not_typeable() {
+        assert_eq!(key_for_char('ë'), None);
+        assert_eq!(key_for_char('🔥'), None);
+    }
 }

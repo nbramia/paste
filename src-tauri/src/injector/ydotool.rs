@@ -7,6 +7,14 @@ pub struct YdotoolInjector;
 
 impl Injector for YdotoolInjector {
     fn inject_text(&self, text: &str) -> Result<(), InjectorError> {
+        // The persistent virtual keyboard types in milliseconds; spawning
+        // ydotool takes hundreds, long enough for the user's next keys to
+        // land inside an expansion. ydotool remains the fallback.
+        if super::virtual_keyboard::type_text(text) {
+            debug!("ydotool: typed {} chars via virtual keyboard", text.len());
+            return Ok(());
+        }
+
         debug!("ydotool: injecting {} chars", text.len());
 
         let status = Command::new("ydotool")
@@ -33,10 +41,15 @@ impl Injector for YdotoolInjector {
             return Ok(());
         }
 
-        debug!("ydotool: sending {} backspaces via xdotool", count);
+        // Prefer the persistent virtual keyboard: it reaches native Wayland
+        // windows. xdotool is the fallback when uinput is unavailable; it
+        // reaches XWayland windows only.
+        if super::virtual_keyboard::backspaces(count) {
+            debug!("ydotool: sent {} backspaces via virtual keyboard", count);
+            return Ok(());
+        }
 
-        // Use xdotool for backspaces — more reliable across ydotool versions
-        // xdotool works under XWayland on most Wayland setups
+        debug!("ydotool: sending {} backspaces via xdotool", count);
         for _ in 0..count {
             let status = Command::new("xdotool")
                 .args(["key", "--clearmodifiers", "BackSpace"])
