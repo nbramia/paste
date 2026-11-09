@@ -1528,16 +1528,25 @@ pub fn run() {
                                                 std::time::Duration::from_secs(1),
                                             );
                                             if let Some(state) = app_handle_exp.try_state::<AppState>() {
-                                                // Delete abbreviation (+ the typed boundary key)
-                                                let _ = state.injector.send_backspaces(backspace_count);
+                                                // Delete abbreviation (+ the typed boundary key).
+                                                // If that fails, typing the expansion would
+                                                // leave both it and the abbreviation behind.
+                                                if let Err(e) = state.injector.send_backspaces(backspace_count) {
+                                                    log::warn!("Expansion of snippet {snippet_id} skipped: backspaces failed: {e}");
+                                                    continue;
+                                                }
                                                 std::thread::sleep(std::time::Duration::from_millis(5));
                                                 // Insert expansion plus the trigger char. Typing
                                                 // covers ASCII only, so non-ASCII goes via clipboard.
-                                                let _ = if needs_clipboard(&full_text) {
+                                                let injected = if needs_clipboard(&full_text) {
                                                     state.injector.inject_via_clipboard(&full_text)
                                                 } else {
                                                     state.injector.inject_text(&full_text)
                                                 };
+                                                if let Err(e) = injected {
+                                                    log::warn!("Expansion of snippet {snippet_id} failed: {e}");
+                                                    continue;
+                                                }
                                                 // Increment use count
                                                 let _ = state.storage.increment_snippet_use_count(&snippet_id);
                                             }

@@ -159,59 +159,78 @@ fn emit_key(dev: &mut VirtualDevice, code: KeyCode, value: i32) -> bool {
     true
 }
 
+/// Outcome of a key sequence sent through the virtual keyboard.
+#[derive(Debug, PartialEq, Eq)]
+pub enum VkOutcome {
+    /// Every key was emitted.
+    Done,
+    /// Nothing was emitted (no device, or untypeable text); fall back to an
+    /// external tool.
+    Unavailable,
+    /// An emit failed partway. Some keys already reached the focused window,
+    /// so retrying the whole sequence elsewhere would duplicate them.
+    Failed,
+}
+
+/// Press and release `key`, holding Shift around it when asked. On a failed
+/// emit, every key this call pressed is released (best effort), so nothing is
+/// left held on the persistent device.
+fn tap(dev: &mut VirtualDevice, key: KeyCode, shift: bool) -> bool {
+    if shift && !emit_key(dev, KeyCode::KEY_LEFTSHIFT, 1) {
+        return false;
+    }
+    let ok = emit_key(dev, key, 1) && emit_key(dev, key, 0);
+    if !ok {
+        emit_key(dev, key, 0);
+    }
+    let released = !shift || emit_key(dev, KeyCode::KEY_LEFTSHIFT, 0);
+    ok && released
+}
+
 /// Type ASCII text through the persistent virtual keyboard, assuming a US
-/// layout. Returns false without emitting anything when the device is
-/// unavailable or the text holds a character it cannot type; the caller
-/// then falls back to an external tool.
+/// layout. Returns `Unavailable` without emitting anything when the device is
+/// missing or the text holds a character it cannot type.
 ///
 /// Typing this way takes a few milliseconds where spawning `ydotool type`
 /// takes hundreds. That matters for the text expander, because keys the user
 /// types while an expansion is still being injected land in the middle of it.
-pub fn type_text(text: &str) -> bool {
+pub fn type_text(text: &str) -> VkOutcome {
     let Some(keys) = text.chars().map(key_for_char).collect::<Option<Vec<_>>>() else {
-        return false;
+        return VkOutcome::Unavailable;
     };
     let Some(dev) = device() else {
-        return false;
+        return VkOutcome::Unavailable;
     };
     let mut dev = match dev.lock() {
         Ok(d) => d,
         Err(poisoned) => poisoned.into_inner(),
     };
     for (key, shift) in keys {
-        let ok = (!shift || emit_key(&mut dev, KeyCode::KEY_LEFTSHIFT, 1))
-            && emit_key(&mut dev, key, 1)
-            && emit_key(&mut dev, key, 0)
-            && (!shift || emit_key(&mut dev, KeyCode::KEY_LEFTSHIFT, 0));
-        if !ok {
-            return false;
+        if !tap(&mut dev, key, shift) {
+            return VkOutcome::Failed;
         }
     }
-    true
+    VkOutcome::Done
 }
 
 /// Emit `count` Backspace presses through the persistent virtual keyboard.
-/// Returns false when the device is unavailable or an emit fails — the
-/// caller should fall back to an external tool.
 ///
 /// This is the only backspace path that reaches native Wayland windows:
 /// `xdotool` talks to XWayland and its keys never arrive in a Wayland client.
-pub fn backspaces(count: usize) -> bool {
+pub fn backspaces(count: usize) -> VkOutcome {
     let Some(dev) = device() else {
-        return false;
+        return VkOutcome::Unavailable;
     };
     let mut dev = match dev.lock() {
         Ok(d) => d,
         Err(poisoned) => poisoned.into_inner(),
     };
     for _ in 0..count {
-        if !(emit_key(&mut dev, KeyCode::KEY_BACKSPACE, 1)
-            && emit_key(&mut dev, KeyCode::KEY_BACKSPACE, 0))
-        {
-            return false;
+        if !tap(&mut dev, KeyCode::KEY_BACKSPACE, false) {
+            return VkOutcome::Failed;
         }
     }
-    true
+    VkOutcome::Done
 }
 
 /// Emit Ctrl+V through the persistent virtual keyboard.

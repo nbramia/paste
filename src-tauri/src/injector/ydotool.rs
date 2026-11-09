@@ -1,3 +1,4 @@
+use super::virtual_keyboard::VkOutcome;
 use super::{Injector, InjectorError};
 use log::debug;
 use std::process::Command;
@@ -10,9 +11,18 @@ impl Injector for YdotoolInjector {
         // The persistent virtual keyboard types in milliseconds; spawning
         // ydotool takes hundreds, long enough for the user's next keys to
         // land inside an expansion. ydotool remains the fallback.
-        if super::virtual_keyboard::type_text(text) {
-            debug!("ydotool: typed {} chars via virtual keyboard", text.len());
-            return Ok(());
+        match super::virtual_keyboard::type_text(text) {
+            VkOutcome::Done => {
+                debug!("ydotool: typed {} chars via virtual keyboard", text.len());
+                return Ok(());
+            }
+            // Part of the text is already typed; ydotool would repeat it.
+            VkOutcome::Failed => {
+                return Err(InjectorError::Failed(
+                    "virtual keyboard failed partway through typing".into(),
+                ))
+            }
+            VkOutcome::Unavailable => {}
         }
 
         debug!("ydotool: injecting {} chars", text.len());
@@ -44,9 +54,19 @@ impl Injector for YdotoolInjector {
         // Prefer the persistent virtual keyboard: it reaches native Wayland
         // windows. xdotool is the fallback when uinput is unavailable; it
         // reaches XWayland windows only.
-        if super::virtual_keyboard::backspaces(count) {
-            debug!("ydotool: sent {} backspaces via virtual keyboard", count);
-            return Ok(());
+        match super::virtual_keyboard::backspaces(count) {
+            VkOutcome::Done => {
+                debug!("ydotool: sent {} backspaces via virtual keyboard", count);
+                return Ok(());
+            }
+            // Some backspaces already landed; retrying the full count would
+            // delete text before the abbreviation.
+            VkOutcome::Failed => {
+                return Err(InjectorError::Failed(
+                    "virtual keyboard failed partway through backspaces".into(),
+                ))
+            }
+            VkOutcome::Unavailable => {}
         }
 
         debug!("ydotool: sending {} backspaces via xdotool", count);
