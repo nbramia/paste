@@ -16,7 +16,7 @@ Paste is a clipboard manager + text expander for Linux, built with Tauri v2 (Rus
 - Storage: `rusqlite` with `bundled-full` — all queries use parameterized statements, never string interpolation
 - No `unwrap()` in production paths — use `map_err(|e| e.to_string())` for Tauri commands, proper error propagation internally
 - Clipboard monitoring polls via `xclip` (XWayland) to avoid `wl-paste` desktop side-effects
-- Text injection: ydotool for typing, xdotool for backspaces (ydotool key codes are broken on some versions)
+- Text injection on Wayland: Paste's persistent uinput virtual keyboard types ASCII and sends backspaces; ydotool (typing) and xdotool (backspaces) are fallbacks when uinput is unavailable. xdotool keys reach XWayland windows only
 
 ### TypeScript (src/)
 - React 19 with functional components and hooks only
@@ -87,7 +87,12 @@ script. The hotkey daemon sees it exactly as it sees a physical keyboard.
 ```bash
 cargo build --release --example e2e_probe
 ./target/release/examples/e2e_probe ctrl-alt-v right enter
+PROBE_CHAR_DELAY_MS=120 ./target/release/examples/e2e_probe 'type:cos and'
 ```
+
+`type:<text>` types US-layout ASCII, which drives the text expander;
+`PROBE_CHAR_DELAY_MS` sets the gap between characters so expansion can be
+checked at human typing speed.
 
 Two things it must respect:
 

@@ -10,8 +10,12 @@
 //! token, which is how paste's own daemon excludes its injector device.
 //!
 //! Usage: cargo run --example e2e_probe -- <chord>...
-//!   chords: ctrl-alt-v | ctrl-v | right | left | enter | escape
+//!   chords: ctrl-alt-v | ctrl-v | right | left | enter | escape | type:<text>
+//!   `type:<text>` types US-layout ASCII (letters, digits, space, punctuation),
+//!   holding Shift where the character needs it. PROBE_CHAR_DELAY_MS sets the
+//!   gap between characters (default 30).
 //! Example: cargo run --example e2e_probe -- ctrl-alt-v right enter
+//! Example: cargo run --example e2e_probe -- 'type:cos '
 
 use std::thread;
 use std::time::Duration;
@@ -38,6 +42,100 @@ fn emit(dev: &mut VirtualDevice, code: KeyCode, value: i32) {
         eprintln!("emit failed: {e}");
     }
     thread::sleep(Duration::from_millis(12));
+}
+
+/// US-layout key and Shift state for an ASCII character.
+fn key_for_char(ch: char) -> Option<(KeyCode, bool)> {
+    const LETTERS: [KeyCode; 26] = [
+        KeyCode::KEY_A,
+        KeyCode::KEY_B,
+        KeyCode::KEY_C,
+        KeyCode::KEY_D,
+        KeyCode::KEY_E,
+        KeyCode::KEY_F,
+        KeyCode::KEY_G,
+        KeyCode::KEY_H,
+        KeyCode::KEY_I,
+        KeyCode::KEY_J,
+        KeyCode::KEY_K,
+        KeyCode::KEY_L,
+        KeyCode::KEY_M,
+        KeyCode::KEY_N,
+        KeyCode::KEY_O,
+        KeyCode::KEY_P,
+        KeyCode::KEY_Q,
+        KeyCode::KEY_R,
+        KeyCode::KEY_S,
+        KeyCode::KEY_T,
+        KeyCode::KEY_U,
+        KeyCode::KEY_V,
+        KeyCode::KEY_W,
+        KeyCode::KEY_X,
+        KeyCode::KEY_Y,
+        KeyCode::KEY_Z,
+    ];
+    const DIGITS: [KeyCode; 10] = [
+        KeyCode::KEY_0,
+        KeyCode::KEY_1,
+        KeyCode::KEY_2,
+        KeyCode::KEY_3,
+        KeyCode::KEY_4,
+        KeyCode::KEY_5,
+        KeyCode::KEY_6,
+        KeyCode::KEY_7,
+        KeyCode::KEY_8,
+        KeyCode::KEY_9,
+    ];
+    const SHIFTED_DIGITS: &str = ")!@#$%^&*(";
+    if ch.is_ascii_lowercase() {
+        return Some((LETTERS[(ch as u8 - b'a') as usize], false));
+    }
+    if ch.is_ascii_uppercase() {
+        return Some((LETTERS[(ch as u8 - b'A') as usize], true));
+    }
+    if ch.is_ascii_digit() {
+        return Some((DIGITS[(ch as u8 - b'0') as usize], false));
+    }
+    if let Some(i) = SHIFTED_DIGITS.find(ch) {
+        return Some((DIGITS[i], true));
+    }
+    let (key, shift) = match ch {
+        ' ' => (KeyCode::KEY_SPACE, false),
+        '-' => (KeyCode::KEY_MINUS, false),
+        '_' => (KeyCode::KEY_MINUS, true),
+        '=' => (KeyCode::KEY_EQUAL, false),
+        '+' => (KeyCode::KEY_EQUAL, true),
+        '[' => (KeyCode::KEY_LEFTBRACE, false),
+        ']' => (KeyCode::KEY_RIGHTBRACE, false),
+        ';' => (KeyCode::KEY_SEMICOLON, false),
+        ':' => (KeyCode::KEY_SEMICOLON, true),
+        '\'' => (KeyCode::KEY_APOSTROPHE, false),
+        ',' => (KeyCode::KEY_COMMA, false),
+        '.' => (KeyCode::KEY_DOT, false),
+        '/' => (KeyCode::KEY_SLASH, false),
+        '?' => (KeyCode::KEY_SLASH, true),
+        _ => return None,
+    };
+    Some((key, shift))
+}
+
+fn type_text(dev: &mut VirtualDevice, text: &str) {
+    // Gap between characters; PROBE_CHAR_DELAY_MS models human typing speed.
+    let gap = std::env::var("PROBE_CHAR_DELAY_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+    for ch in text.chars() {
+        match key_for_char(ch) {
+            Some((key, true)) => chord(dev, &[KeyCode::KEY_LEFTSHIFT], key),
+            Some((key, false)) => chord(dev, &[], key),
+            None => {
+                eprintln!("cannot type {ch:?}");
+                std::process::exit(2);
+            }
+        }
+        thread::sleep(Duration::from_millis(gap));
+    }
 }
 
 fn chord(dev: &mut VirtualDevice, mods: &[KeyCode], key: KeyCode) {
@@ -87,6 +185,7 @@ fn main() {
             "left" => chord(&mut dev, &[], KeyCode::KEY_LEFT),
             "enter" => chord(&mut dev, &[], KeyCode::KEY_ENTER),
             "escape" => chord(&mut dev, &[], KeyCode::KEY_ESC),
+            other if other.starts_with("type:") => type_text(&mut dev, &other[5..]),
             other => {
                 eprintln!("unknown chord: {other}");
                 std::process::exit(2);

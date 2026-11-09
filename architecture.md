@@ -14,7 +14,7 @@ These are the architectural choices that shaped the project. Each involved trade
 
 4. **Convention-driven agent framework over settings-file configuration** — Agent behavior is defined in AGENTS.md and skill files rather than opaque configuration. Rules are readable, auditable, and versionable. A single hook in `.claude/settings.json` blocks the few operations that destroy work irreversibly; everything else is convention, enforced by review rather than by a gate.
 
-5. **xdotool for backspaces, ydotool for typing** — ydotool's key code syntax (`14:1 14:0`) was unreliable across versions, producing garbage characters instead of backspaces. xdotool's `key BackSpace` works reliably under XWayland. The injector uses ydotool for `type` (text insertion) and xdotool for `key` (backspaces). Pragmatic, not elegant.
+5. **A persistent uinput keyboard for expander keystrokes** — On Wayland the expander's backspaces and ASCII typing go through one virtual keyboard that Paste creates at startup and keeps open. The external tools fall short for both jobs. `xdotool` talks to XWayland, so its backspaces never reach native Wayland windows. `ydotool` without `ydotoold` creates a fresh device per call and waits 12ms per key, and that makes an expansion take hundreds of milliseconds. Keys the user types during that window land in the middle of it. Through the persistent device an expansion takes a few milliseconds. The tools remain fallbacks when uinput is unavailable. The cost is a US-layout assumption for typed characters. Non-ASCII expansions go through the clipboard instead.
 
 6. **SQLite with LIKE search over FTS5 or an external engine** — Clipboard history, snippets, and pinboards all live in one SQLite database, and search is a parameterized `LIKE '%query%'` scan. An FTS5 index was built first but never queried; measured at 10k clips the LIKE scan takes ~3ms, comfortably inside the 50ms target, so the index was dropped in migration 2 rather than wired up (#102). Substring matching also suits short clipboard content better than FTS5 tokenization — `ell` finds `hello`. The trade-off accepted: no relevance ranking, and search cost grows linearly with history size. Versioned migrations handle schema evolution. Single-writer concurrency (Mutex<Connection>) is fine for a desktop app.
 
@@ -575,15 +575,18 @@ The hotkey daemon and text expander share the same evdev connection — a single
 
 #### Abbreviation Matching
 
-Maintains a rolling character buffer (max 100 chars). On each keystroke:
+Maintains a rolling character buffer (max 100 chars) and one `AbbreviationMatcher` shared through `AppState`. On each keystroke:
 
-1. Append character to buffer
-2. Check if buffer suffix matches any abbreviation
+1. Append character to buffer. A space or any typeable punctuation character (judged from the resolved character, so shifted keys such as `!` and `?` count) instead triggers a match check on the buffer as it stands; Enter and Tab never trigger one and just clear the buffer, because the daemon cannot suppress keys and the form has already been submitted or focus has already moved by the time the expander acts. In immediate mode the check runs after every character.
+2. Look for the longest abbreviation the buffer ends with. An abbreviation that starts with a letter or digit matches only as a whole word: the character before it must be absent or non-alphanumeric (`cos` expands in `(cos` but not in `macos`). Candidates that fail this are skipped and the next-longest is tried. Abbreviations that start with punctuation (`;sig`, `:fire`, `[]`) match as a plain suffix.
 3. If match found:
-   a. Emit backspace keystrokes to delete the abbreviation (N backspaces for N-char abbreviation)
+   a. Emit backspaces for the abbreviation, plus one more for the boundary key when one was typed (word-boundary mode). Immediate mode deletes only the abbreviation.
    b. Evaluate the snippet template (resolve macros, scripts, etc.)
-   c. Inject the expanded text via text injector
+   c. Inject the expanded text followed by the trigger character: space and punctuation are re-emitted; immediate mode has none. If the trigger was typed with Shift held, the expander waits (up to 1s) for Shift to be released before injecting, so the text is not shifted and Ctrl+V does not become Ctrl+Shift+V.
+   d. Text containing any non-ASCII character is inserted via `inject_via_clipboard`, because the keyboard-based typing paths cover ASCII only. ASCII text is typed with `inject_text`.
 4. Reset buffer on word boundary or after a configurable timeout
+
+Every command that changes snippets (create, update, delete, espanso import, JSON import) reloads the shared matcher from storage, so changes apply without a restart.
 
 #### Template Evaluation
 
@@ -659,13 +662,13 @@ The injector falls back to clipboard injection if the configured method fails at
 | Method | Tool | Use Case |
 |--------|------|----------|
 | xdotool | `xdotool type --clearmodifiers` | X11 typing simulation |
-| ydotool | `ydotool type` | Wayland universal (requires ydotoold) |
+| ydotool | persistent uinput keyboard, falling back to `ydotool type` | Wayland universal
 | wtype | `wtype` | wlroots compositors (Sway, Hyprland) |
 | clipboard | `xclip + key sim` | Fallback: set clipboard + Ctrl+V |
 
 For paste operations from the filmstrip, clipboard injection is always used to preserve rich content (HTML, images).
 
-**ydotool backspace workaround:** ydotool's key codes for backspace were broken/inconsistent, so the text expander uses `xdotool` as a fallback for emitting backspace keystrokes when deleting abbreviations before expansion.
+**Expander keystrokes on Wayland:** the ydotool backend sends the expander's backspaces, and types ASCII expansions, through the persistent uinput virtual keyboard (`injector/virtual_keyboard.rs`, US layout). It falls back to `xdotool key BackSpace` and `ydotool type` only when that device is unavailable. See decision 5.
 
 ---
 

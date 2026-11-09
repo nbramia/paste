@@ -66,28 +66,6 @@ pub fn keycode_to_char(key: KeyCode, shift: bool) -> Option<char> {
     }
 }
 
-/// Check if a KeyCode represents a word boundary character.
-/// Word boundaries: space, tab, enter, punctuation.
-pub fn is_word_boundary_key(key: KeyCode) -> bool {
-    matches!(
-        key,
-        KeyCode::KEY_SPACE
-            | KeyCode::KEY_TAB
-            | KeyCode::KEY_ENTER
-            | KeyCode::KEY_DOT
-            | KeyCode::KEY_COMMA
-            | KeyCode::KEY_SEMICOLON
-            | KeyCode::KEY_APOSTROPHE
-            | KeyCode::KEY_SLASH
-            | KeyCode::KEY_BACKSLASH
-            | KeyCode::KEY_MINUS
-            | KeyCode::KEY_EQUAL
-            | KeyCode::KEY_LEFTBRACE
-            | KeyCode::KEY_RIGHTBRACE
-            | KeyCode::KEY_GRAVE
-    )
-}
-
 /// Check if a KeyCode is a modifier key.
 pub fn is_modifier_key(key: KeyCode) -> bool {
     matches!(
@@ -140,16 +118,6 @@ mod tests {
         assert_eq!(keycode_to_char(KeyCode::KEY_F1, false), None);
         assert_eq!(keycode_to_char(KeyCode::KEY_ESC, false), None);
         assert_eq!(keycode_to_char(KeyCode::KEY_ENTER, false), None);
-    }
-
-    #[test]
-    fn test_word_boundary() {
-        assert!(is_word_boundary_key(KeyCode::KEY_SPACE));
-        assert!(is_word_boundary_key(KeyCode::KEY_ENTER));
-        assert!(is_word_boundary_key(KeyCode::KEY_DOT));
-        assert!(is_word_boundary_key(KeyCode::KEY_COMMA));
-        assert!(!is_word_boundary_key(KeyCode::KEY_A));
-        assert!(!is_word_boundary_key(KeyCode::KEY_1));
     }
 
     #[test]
