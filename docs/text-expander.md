@@ -57,9 +57,7 @@ Output format: `YYYY-MM-DD`.
 
 ## Cursor Positioning
 
-`%|` marks where the cursor should be placed after expansion.
-
-**Example:** `;reply` → `Hi %|,\n\nThanks for your message.` — cursor lands after "Hi ".
+`%|` marks where the cursor should go after expansion. The marker is removed from the output. The cursor is not moved yet, so it stays at the end of the expansion.
 
 ## Fill-in Fields
 
@@ -113,8 +111,25 @@ Commands time out after 5 seconds. Errors produce `[shell error: ...]` text.
 
 Configure in Settings or `config.toml`:
 
-- **Word boundary** (default): Expansion triggers when you type the abbreviation followed by a space, tab, or punctuation. Safest — no accidental triggers.
-- **Immediate**: Expansion triggers as soon as the abbreviation is fully typed. Faster but more prone to false positives with short abbreviations.
+- **Word boundary** (default): expansion triggers when you type the abbreviation followed by a space or any punctuation, shifted characters such as `!` and `?` included. This matches macOS text replacement.
+- **Immediate**: expansion triggers as soon as the abbreviation is fully typed. It is faster, but short abbreviations trigger more often by accident.
+
+### How word-boundary expansion behaves
+
+- **Whole words only.** An abbreviation that starts with a letter or digit expands only when it is the whole word. With `cos` → `Chief of Staff`, typing `cos ` or `(cos.` expands, but `macos ` does not. An abbreviation that starts with punctuation (`;sig`, `:fire`, `[]`) expands wherever it is typed.
+- **The trigger character is kept.** `cos ` becomes `Chief of Staff `, and `cos!` becomes `Chief of Staff!`.
+- **Enter and Tab never trigger.** By the time Paste sees them, the message has already been sent or the focus has already moved.
+- **Case must match exactly.** With `omw` → `On my way!`, typing `Omw` does not expand.
+- **Emoji and accented text work.** Expansions containing non-ASCII characters (`:fire` → 🔥, `Zoe` → `Zoë`) are pasted through the clipboard, so they replace the clipboard's contents. ASCII expansions are typed directly and leave the clipboard alone.
+
+Changes to snippets take effect immediately; there is no need to restart.
+
+### Bringing over macOS text replacements
+
+Paste's word-boundary behaviour matches macOS text replacement, so shortcuts from **System Settings → Keyboard → Text Replacements** work unchanged. Two ways to move them over:
+
+- Add them by hand in the Snippets tab.
+- Build a JSON file in the export format below and import it. On the Mac, `defaults read -g NSUserDictionaryReplacementItems` lists every replacement.
 
 ## Importing from espanso
 
@@ -140,7 +155,7 @@ When importing, snippets containing `%shell(...)` macros are flagged with a warn
 
 ## Tips for Abbreviations
 
-- **Use a prefix**: Starting all abbreviations with a symbol (`;`, `//`, `,,`) avoids accidental triggers. For example: `;sig`, `;date`, `;addr`.
+- **Use a prefix when in doubt**: starting an abbreviation with a symbol (`;`, `//`, `,,`) makes it impossible to type by accident. Plain-word abbreviations such as `omw` are safe too, because they expand only as whole words.
 - **Keep them memorable**: `;sig` for signature, `;em` for email, `;ph` for phone.
 - **Avoid common words**: Don't use abbreviations that could appear in normal typing.
 - **Use word boundary mode**: The default trigger mode prevents false positives by requiring a space or punctuation after the abbreviation.

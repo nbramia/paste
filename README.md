@@ -29,6 +29,7 @@ Paste brings that experience to Linux: a visual filmstrip overlay, pinboards for
 
 ### Text Expander
 - **Abbreviation triggers** — Type `;sig` + space to insert your full signature
+- **macOS-style text replacement** — `omw` + space → `On my way! `. Shortcuts expand only as whole words and keep the space or punctuation you typed, and emoji expansions work
 - **Date/time macros** — `%Y-%m-%d`, `%H:%M`, `%date(+5d)` for relative dates
 - **Dynamic content** — `%clipboard`, `%shell(command)`, `%snippet(abbr)` for nesting
 - **Fill-in fields** — `%fill(name)` triggers a dialog for dynamic content
@@ -85,7 +86,7 @@ This is entirely optional and nothing else depends on it. Other compositors
 Download the latest `.deb` from [Releases](https://github.com/nbramia/paste/releases), then:
 
 ```bash
-sudo dpkg -i Paste_0.4.0_amd64.deb
+sudo dpkg -i Paste_0.5.0_amd64.deb
 ```
 
 ### From AppImage
@@ -93,8 +94,8 @@ sudo dpkg -i Paste_0.4.0_amd64.deb
 Download the latest `.AppImage` from [Releases](https://github.com/nbramia/paste/releases), then:
 
 ```bash
-chmod +x Paste_0.4.0_amd64.AppImage
-./Paste_0.4.0_amd64.AppImage
+chmod +x Paste_0.5.0_amd64.AppImage
+./Paste_0.5.0_amd64.AppImage
 ```
 
 ### From Source
