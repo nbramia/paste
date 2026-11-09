@@ -44,6 +44,20 @@ pub struct AppState {
     pub injector: Arc<dyn Injector>,
     pub paste_stack: PasteStack,
     pub excluded_apps: Mutex<Vec<String>>,
+    /// Abbreviation matcher shared with the text expander thread.
+    pub matcher: Arc<Mutex<expander::matcher::AbbreviationMatcher>>,
+}
+
+impl AppState {
+    /// Reload the expander's matcher from storage. Called after any command
+    /// that changes snippets; failures are logged, not surfaced, because the
+    /// snippet change itself already succeeded.
+    fn reload_matcher(&self) {
+        match expander::matcher::reload_from_storage(&self.matcher, &self.storage) {
+            Ok(n) => log::debug!("Expander matcher reloaded with {n} snippets"),
+            Err(e) => log::warn!("Failed to reload expander matcher: {e}"),
+        }
+    }
 }
 
 #[tauri::command]
@@ -623,10 +637,12 @@ fn create_snippet(
         group_id,
         description,
     };
-    state
+    let snippet = state
         .storage
         .create_snippet(&new)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    state.reload_matcher();
+    Ok(snippet)
 }
 
 // Tauri deserializes command arguments positionally from the JS call site,
@@ -652,15 +668,22 @@ fn update_snippet(
         group_id,
         description,
     };
-    state
+    let snippet = state
         .storage
         .update_snippet(&id, &update)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    state.reload_matcher();
+    Ok(snippet)
 }
 
 #[tauri::command]
 fn delete_snippet(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
-    state.storage.delete_snippet(&id).map_err(|e| e.to_string())
+    state
+        .storage
+        .delete_snippet(&id)
+        .map_err(|e| e.to_string())?;
+    state.reload_matcher();
+    Ok(())
 }
 
 #[tauri::command]
@@ -765,6 +788,7 @@ fn import_espanso(
         }
     }
 
+    state.reload_matcher();
     Ok(ImportResult {
         imported,
         skipped,
@@ -852,6 +876,7 @@ fn import_snippets_json(
         }
     }
 
+    state.reload_matcher();
     Ok(JsonImportResult {
         imported,
         skipped,
@@ -1128,7 +1153,11 @@ pub fn run() {
         injector: Arc::from(injector),
         paste_stack: PasteStack::new(),
         excluded_apps: Mutex::new(config.clipboard.excluded_apps.clone()),
+        matcher: Arc::new(Mutex::new(expander::matcher::AbbreviationMatcher::new())),
     };
+    if let Err(e) = expander::matcher::reload_from_storage(&app_state.matcher, &app_state.storage) {
+        log::warn!("Failed to load snippets into expander matcher: {e}");
+    }
 
     log::info!("App state initialized");
 
@@ -1397,7 +1426,7 @@ pub fn run() {
             // Start hotkey daemon + text expander
             {
                 use hotkey::daemon::{HotkeyDaemon, HotkeyAction};
-                use expander::engine::{ExpanderEngine, TriggerMode, ExpanderAction};
+                use expander::engine::{needs_clipboard, with_trigger, ExpanderEngine, TriggerMode, ExpanderAction};
 
                 let hk_config = config::AppConfig::load().unwrap_or_default();
 
@@ -1473,38 +1502,34 @@ pub fn run() {
                                 } else {
                                     TriggerMode::WordBoundary
                                 };
-                                let mut engine = ExpanderEngine::new(trigger, 5);
-
-                                // Load snippets into matcher
-                                if let Some(state) = app_handle_exp.try_state::<AppState>() {
-                                    if let Ok(snippets) = state.storage.list_snippets(None) {
-                                        let entries: Vec<(String, String, String, String)> = snippets
-                                            .iter()
-                                            .map(|s| (
-                                                s.abbreviation.clone(),
-                                                s.id.clone(),
-                                                s.content.clone(),
-                                                s.content_type.clone(),
-                                            ))
-                                            .collect();
-                                        engine.matcher().lock().unwrap().load(entries);
-                                        log::info!("Text expander loaded {} snippets", snippets.len());
-                                    }
-                                }
+                                // The matcher lives in AppState (loaded at startup and
+                                // reloaded by the snippet commands).
+                                let Some(shared_matcher) = app_handle_exp
+                                    .try_state::<AppState>()
+                                    .map(|state| state.matcher.clone())
+                                else {
+                                    log::error!("AppState unavailable; text expander not started");
+                                    return;
+                                };
+                                let mut engine = ExpanderEngine::with_matcher(trigger, 5, shared_matcher);
 
                                 for keystroke in keystroke_rx {
                                     let action = engine.process_key(keystroke.key, keystroke.pressed);
                                     match action {
-                                        ExpanderAction::Expand { backspace_count, text, snippet_id } => {
-                                            // +1 backspace for the trigger character (space/punctuation)
-                                            let total_backspaces = backspace_count + 1;
-                                            log::debug!("Expanding snippet {snippet_id}: {total_backspaces} backspaces + {} chars", text.len());
+                                        ExpanderAction::Expand { backspace_count, text, snippet_id, trigger } => {
+                                            let full_text = with_trigger(&text, trigger);
+                                            log::debug!("Expanding snippet {snippet_id}: {backspace_count} backspaces + {} chars", full_text.len());
                                             if let Some(state) = app_handle_exp.try_state::<AppState>() {
-                                                // Delete abbreviation + trigger char
-                                                let _ = state.injector.send_backspaces(total_backspaces);
+                                                // Delete abbreviation (+ the typed boundary key)
+                                                let _ = state.injector.send_backspaces(backspace_count);
                                                 std::thread::sleep(std::time::Duration::from_millis(50));
-                                                // Insert expansion
-                                                let _ = state.injector.inject_text(&text);
+                                                // Insert expansion plus the trigger char. ydotool
+                                                // types ASCII only, so non-ASCII goes via clipboard.
+                                                let _ = if needs_clipboard(&full_text) {
+                                                    state.injector.inject_via_clipboard(&full_text)
+                                                } else {
+                                                    state.injector.inject_text(&full_text)
+                                                };
                                                 // Increment use count
                                                 let _ = state.storage.increment_snippet_use_count(&snippet_id);
                                             }
