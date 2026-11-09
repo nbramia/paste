@@ -577,12 +577,12 @@ The hotkey daemon and text expander share the same evdev connection — a single
 
 Maintains a rolling character buffer (max 100 chars) and one `AbbreviationMatcher` shared through `AppState`. On each keystroke:
 
-1. Append character to buffer. A word-boundary key (space, Enter, Tab, punctuation) instead triggers a match check on the buffer as it stands; in immediate mode the check runs after every character.
+1. Append character to buffer. A space or any typeable punctuation character (judged from the resolved character, so shifted keys such as `!` and `?` count) instead triggers a match check on the buffer as it stands; Enter and Tab never trigger one and just clear the buffer, because the daemon cannot suppress keys and the form has already been submitted or focus has already moved by the time the expander acts. In immediate mode the check runs after every character.
 2. Look for the longest abbreviation the buffer ends with. An abbreviation that starts with a letter or digit matches only as a whole word: the character before it must be absent or non-alphanumeric (`cos` expands in `(cos` but not in `macos`). Candidates that fail this are skipped and the next-longest is tried. Abbreviations that start with punctuation (`;sig`, `:fire`, `[]`) match as a plain suffix.
 3. If match found:
    a. Emit backspaces for the abbreviation, plus one more for the boundary key when one was typed (word-boundary mode). Immediate mode deletes only the abbreviation.
    b. Evaluate the snippet template (resolve macros, scripts, etc.)
-   c. Inject the expanded text followed by the trigger character: space, punctuation and Enter are re-emitted; Tab is not (it moves focus in many apps) and immediate mode has none.
+   c. Inject the expanded text followed by the trigger character: space and punctuation are re-emitted; immediate mode has none. If the trigger was typed with Shift held, the expander waits (up to 1s) for Shift to be released before injecting, so the text is not shifted and Ctrl+V does not become Ctrl+Shift+V.
    d. Text containing any non-ASCII character is inserted via `inject_via_clipboard`, since ydotool types ASCII only; ASCII text is typed with `inject_text`.
 4. Reset buffer on word boundary or after a configurable timeout
 

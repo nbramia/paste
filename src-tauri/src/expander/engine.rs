@@ -1,14 +1,16 @@
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use evdev::KeyCode;
 use log::{debug, info};
 
 use super::buffer::CharBuffer;
-use super::keymap::{is_modifier_key, is_word_boundary_key, keycode_to_char};
+use super::keymap::{is_modifier_key, keycode_to_char};
 use super::matcher::AbbreviationMatcher;
 use super::template::expand_template;
+use crate::hotkey::daemon::KeystrokeEvent;
 
 /// Trigger mode for abbreviation expansion.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,8 +34,7 @@ pub enum ExpanderAction {
         text: String,
         snippet_id: String,
         /// The character that triggered the expansion, to type after the text.
-        /// `None` for Tab (which moves focus) and for immediate mode (no
-        /// trigger character was typed).
+        /// `None` in immediate mode (no trigger character was typed).
         trigger: Option<char>,
     },
 }
@@ -52,6 +53,32 @@ pub fn with_trigger(text: &str, trigger: Option<char>) -> String {
         full.push(ch);
     }
     full
+}
+
+/// Wait until the engine sees Shift released, for at most `timeout`.
+///
+/// An expansion triggered by a shifted character (`!`, `:`) fires while the
+/// physical Shift may still be down, which would capitalize typed text and turn
+/// Ctrl+V into Ctrl+Shift+V. Every keystroke received while waiting is fed
+/// through the engine so its state stays consistent; any expansion those would
+/// produce is discarded.
+pub fn wait_for_shift_release(
+    engine: &mut ExpanderEngine,
+    rx: &Receiver<KeystrokeEvent>,
+    timeout: Duration,
+) {
+    let deadline = Instant::now() + timeout;
+    while engine.shift_held() {
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            return;
+        };
+        match rx.recv_timeout(remaining) {
+            Ok(ev) => {
+                let _ = engine.process_key(ev.key, ev.pressed);
+            }
+            Err(RecvTimeoutError::Timeout) | Err(RecvTimeoutError::Disconnected) => return,
+        }
+    }
 }
 
 /// The text expander engine. Processes keystrokes and detects abbreviation matches.
@@ -101,6 +128,11 @@ impl ExpanderEngine {
         self.enabled.clone()
     }
 
+    /// Whether a Shift key is currently held, as seen by the engine.
+    pub fn shift_held(&self) -> bool {
+        self.shift_held
+    }
+
     /// Check if the expander is enabled.
     pub fn is_enabled(&self) -> bool {
         self.enabled.load(Ordering::Relaxed)
@@ -147,49 +179,35 @@ impl ExpanderEngine {
             return ExpanderAction::None;
         }
 
-        // Handle Enter — reset buffer (never part of an abbreviation)
-        if key == KeyCode::KEY_ENTER {
-            // In word boundary mode, check for expansion before clearing
-            if self.trigger_mode == TriggerMode::WordBoundary {
-                if let Some(action) = self.check_and_expand(Some('\n')) {
-                    self.buffer.clear();
-                    return action;
-                }
-            }
+        // Enter and Tab never trigger an expansion. The daemon cannot suppress
+        // keys, so by the time we act Enter has already submitted the form and
+        // Tab has already moved focus; backspaces would land in the wrong place.
+        if key == KeyCode::KEY_ENTER || key == KeyCode::KEY_TAB {
             self.buffer.clear();
             return ExpanderAction::None;
         }
 
-        // In WordBoundary mode, word boundary keys (space, tab, punctuation)
-        // trigger an expansion check on the current buffer content.
-        // If the word boundary character is also a typeable character (e.g., ';', '/'),
-        // it gets added to the buffer for future abbreviation matching.
-        if self.trigger_mode == TriggerMode::WordBoundary && is_word_boundary_key(key) {
-            // Check if buffer ends with an abbreviation BEFORE adding this char
-            let trigger = if key == KeyCode::KEY_TAB {
-                None
-            } else {
-                keycode_to_char(key, self.shift_held)
-            };
-            if let Some(action) = self.check_and_expand(trigger) {
-                self.buffer.clear();
-                return action;
-            }
-
-            // No expansion — add the character to the buffer if it's typeable,
-            // since it could be the start of an abbreviation (e.g., ';', '/')
+        // In WordBoundary mode, a space or any typeable punctuation character
+        // (decided from the resolved character, so shifted keys like '!' count)
+        // triggers an expansion check on the current buffer content.
+        // Punctuation that finds no match is added to the buffer, since it
+        // could start an abbreviation (e.g. ';', '/', ':').
+        if self.trigger_mode == TriggerMode::WordBoundary {
             if let Some(ch) = keycode_to_char(key, self.shift_held) {
-                // Space and tab are true word separators — clear buffer and don't add
-                if ch == ' ' || ch == '\t' {
-                    self.buffer.clear();
-                } else {
-                    // Punctuation that could be part of an abbreviation prefix
-                    self.buffer.push(ch);
+                if !ch.is_alphanumeric() {
+                    // Check BEFORE adding this char to the buffer
+                    if let Some(action) = self.check_and_expand(Some(ch)) {
+                        self.buffer.clear();
+                        return action;
+                    }
+                    if ch == ' ' {
+                        self.buffer.clear();
+                    } else {
+                        self.buffer.push(ch);
+                    }
+                    return ExpanderAction::None;
                 }
-            } else {
-                self.buffer.clear();
             }
-            return ExpanderAction::None;
         }
 
         // Convert key to character
@@ -356,6 +374,13 @@ mod tests {
             ',' => Some((KeyCode::KEY_COMMA, false)),
             '.' => Some((KeyCode::KEY_DOT, false)),
             ' ' => Some((KeyCode::KEY_SPACE, false)),
+            '!' => Some((KeyCode::KEY_1, true)),
+            '(' => Some((KeyCode::KEY_9, true)),
+            '?' => Some((KeyCode::KEY_SLASH, true)),
+            '+' => Some((KeyCode::KEY_EQUAL, true)),
+            '[' => Some((KeyCode::KEY_LEFTBRACE, false)),
+            ']' => Some((KeyCode::KEY_RIGHTBRACE, false)),
+            '1' => Some((KeyCode::KEY_1, false)),
             _ => None,
         }
     }
@@ -536,21 +561,55 @@ mod tests {
     }
 
     #[test]
-    fn test_trigger_enter() {
-        let mut engine = setup_words(TriggerMode::WordBoundary);
-        type_string(&mut engine, "cos");
-        let action = engine.process_key(KeyCode::KEY_ENTER, true);
-        assert_eq!(expand_of(&action).2, Some('\n'));
+    fn test_enter_and_tab_do_not_expand_and_clear_buffer() {
+        for key in [KeyCode::KEY_ENTER, KeyCode::KEY_TAB] {
+            let mut engine = setup_words(TriggerMode::WordBoundary);
+            type_string(&mut engine, "cos");
+            let action = engine.process_key(key, true);
+            assert!(matches!(action, ExpanderAction::None));
+            // Buffer was cleared: "x " must not see a stale "cos".
+            let actions = type_string(&mut engine, "x ");
+            assert!(actions.iter().all(|a| matches!(a, ExpanderAction::None)));
+            // And a fresh "cos " still expands.
+            let actions = type_string(&mut engine, "cos ");
+            assert!(matches!(
+                actions.last().unwrap(),
+                ExpanderAction::Expand { .. }
+            ));
+        }
     }
 
     #[test]
-    fn test_trigger_tab_is_none() {
+    fn test_shifted_punctuation_triggers() {
+        for (typed, expected) in [("cos!", '!'), ("cos?", '?'), ("cos:", ':'), ("cos(", '(')] {
+            let mut engine = setup_words(TriggerMode::WordBoundary);
+            let actions = type_string(&mut engine, typed);
+            let (bs, text, trigger) = expand_of(actions.last().unwrap());
+            assert_eq!((bs, text, trigger), (4, "Chief of Staff", Some(expected)));
+        }
+    }
+
+    #[test]
+    fn test_punctuation_abbreviations_with_symbols() {
+        let mut engine = ExpanderEngine::new(TriggerMode::WordBoundary, 5);
+        engine.matcher.lock().unwrap().load(vec![
+            (":+1".into(), "1".into(), "thumbs".into(), "plain".into()),
+            ("[]".into(), "2".into(), "box".into(), "plain".into()),
+        ]);
+        let actions = type_string(&mut engine, ":+1 ");
+        assert_eq!(expand_of(actions.last().unwrap()).1, "thumbs");
+        let actions = type_string(&mut engine, "[] ");
+        assert_eq!(expand_of(actions.last().unwrap()).1, "box");
+    }
+
+    #[test]
+    fn test_shift_held_getter() {
         let mut engine = setup_words(TriggerMode::WordBoundary);
-        type_string(&mut engine, "cos");
-        let action = engine.process_key(KeyCode::KEY_TAB, true);
-        let (bs, _, trigger) = expand_of(&action);
-        assert_eq!(trigger, None);
-        assert_eq!(bs, 4); // the typed Tab is still deleted
+        assert!(!engine.shift_held());
+        engine.process_key(KeyCode::KEY_LEFTSHIFT, true);
+        assert!(engine.shift_held());
+        engine.process_key(KeyCode::KEY_LEFTSHIFT, false);
+        assert!(!engine.shift_held());
     }
 
     #[test]
@@ -605,5 +664,54 @@ mod tests {
         assert_eq!(with_trigger("hi", Some(' ')), "hi ");
         assert_eq!(with_trigger("hi", Some('\n')), "hi\n");
         assert_eq!(with_trigger("hi", None), "hi");
+    }
+
+    #[test]
+    fn test_wait_for_shift_release() {
+        use std::sync::mpsc;
+        let mut engine = setup_words(TriggerMode::WordBoundary);
+        engine.process_key(KeyCode::KEY_LEFTSHIFT, true);
+        let (tx, rx) = mpsc::channel();
+        tx.send(KeystrokeEvent {
+            key: KeyCode::KEY_A,
+            pressed: true,
+        })
+        .unwrap();
+        tx.send(KeystrokeEvent {
+            key: KeyCode::KEY_LEFTSHIFT,
+            pressed: false,
+        })
+        .unwrap();
+        tx.send(KeystrokeEvent {
+            key: KeyCode::KEY_B,
+            pressed: true,
+        })
+        .unwrap();
+        wait_for_shift_release(&mut engine, &rx, Duration::from_secs(1));
+        assert!(!engine.shift_held());
+        // The key after the release was left in the channel.
+        assert_eq!(rx.try_recv().unwrap().key, KeyCode::KEY_B);
+    }
+
+    #[test]
+    fn test_wait_for_shift_release_times_out() {
+        use std::sync::mpsc;
+        let mut engine = setup_words(TriggerMode::WordBoundary);
+        engine.process_key(KeyCode::KEY_LEFTSHIFT, true);
+        let (_tx, rx) = mpsc::channel::<KeystrokeEvent>();
+        let start = Instant::now();
+        wait_for_shift_release(&mut engine, &rx, Duration::from_millis(50));
+        assert!(engine.shift_held());
+        assert!(start.elapsed() < Duration::from_millis(500));
+    }
+
+    #[test]
+    fn test_wait_returns_immediately_without_shift() {
+        use std::sync::mpsc;
+        let mut engine = setup_words(TriggerMode::WordBoundary);
+        let (_tx, rx) = mpsc::channel::<KeystrokeEvent>();
+        let start = Instant::now();
+        wait_for_shift_release(&mut engine, &rx, Duration::from_secs(1));
+        assert!(start.elapsed() < Duration::from_millis(100));
     }
 }

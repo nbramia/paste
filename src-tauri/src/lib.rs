@@ -1426,7 +1426,7 @@ pub fn run() {
             // Start hotkey daemon + text expander
             {
                 use hotkey::daemon::{HotkeyDaemon, HotkeyAction};
-                use expander::engine::{needs_clipboard, with_trigger, ExpanderEngine, TriggerMode, ExpanderAction};
+                use expander::engine::{needs_clipboard, wait_for_shift_release, with_trigger, ExpanderEngine, TriggerMode, ExpanderAction};
 
                 let hk_config = config::AppConfig::load().unwrap_or_default();
 
@@ -1513,12 +1513,20 @@ pub fn run() {
                                 };
                                 let mut engine = ExpanderEngine::with_matcher(trigger, 5, shared_matcher);
 
-                                for keystroke in keystroke_rx {
+                                while let Ok(keystroke) = keystroke_rx.recv() {
                                     let action = engine.process_key(keystroke.key, keystroke.pressed);
                                     match action {
                                         ExpanderAction::Expand { backspace_count, text, snippet_id, trigger } => {
                                             let full_text = with_trigger(&text, trigger);
                                             log::debug!("Expanding snippet {snippet_id}: {backspace_count} backspaces + {} chars", full_text.len());
+                                            // The trigger may have been typed with Shift held;
+                                            // injecting now would shift the text and turn Ctrl+V
+                                            // into Ctrl+Shift+V.
+                                            wait_for_shift_release(
+                                                &mut engine,
+                                                &keystroke_rx,
+                                                std::time::Duration::from_secs(1),
+                                            );
                                             if let Some(state) = app_handle_exp.try_state::<AppState>() {
                                                 // Delete abbreviation (+ the typed boundary key)
                                                 let _ = state.injector.send_backspaces(backspace_count);
